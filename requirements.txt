@@ -1,0 +1,27 @@
+# --- Backend API ---
+fastapi[all]==0.115.0
+uvicorn[standard]==0.30.6
+
+# --- LangChain ecosystem ---
+langchain==0.2.14
+langchain-community==0.2.12
+langchain-chroma==0.1.4
+langchain-huggingface==0.0.3
+
+# --- Embeddings & Transformers ---
+sentence-transformers==3.0.1
+transformers==4.44.2
+
+# --- Vector database ---
+chromadb==0.5.5
+
+# --- LLM integrations ---
+# ollama==0.3.3   # ⚠️ Commented out (requires local server)
+google-generativeai==0.7.2   # Gemini (Google AI)
+
+# --- PDF parsing ---
+PyPDF2==3.0.1
+# pymupdf==1.24.9   # optional: faster, more accurate PDF parser
+
+# --- Utilities ---
+python-dotenv==1.0.1

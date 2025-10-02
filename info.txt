@@ -1,0 +1,21 @@
+V5
+
+1. clicking a faq in the faq page will query the chatbot
+2. ranked faq in admin panel includes everything that has been queried atleast twice
+3. replaced analytics page in admin panel with manage queries page
+4. replaced corrected button with resolved date button
+5. responsive admin panel
+6. add feeback page in flutter app and admin panel
+7. langsmith dashboard
+
+possible future features:
+1. add search/filter functionality to manage queries
+2. select multiple queries to mark as resolved simultaneously
+3. group similar queries together ("dean of cbm" vs "who is cbm dean")
+
+next:
+1. allow users to submit feedback
+2. find a way to start system without manually running uvicorn
+3. find a way to access admin panel in other devices
+4. make the system apk work on phone
+5. change app name from gsu_chatbot_app to ChatBook AI
