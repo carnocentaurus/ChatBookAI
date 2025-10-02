@@ -1,0 +1,30 @@
+# Python virtual environments
+.venv/
+venv/
+ENV/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Environment variables
+.env
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+*.log
+*.pot
+*.pyc
+*.pyo
+*.pyd
+
+# Flutter build directories
+FlutterApp/build/
+FlutterApp/.dart_tool/
+FlutterApp/.packages
+FlutterApp/pubspec.lock
