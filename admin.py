@@ -1,12 +1,13 @@
 # admin.py
 
-from fastapi import HTTPException, Depends, Form, Request
+from fastapi import HTTPException, Depends, Form, Request, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 import secrets
 import os
 import csv
 import sqlite3
+import shutil
 from datetime import datetime
 from collections import Counter
 from urllib.parse import quote, unquote
@@ -96,6 +97,63 @@ def setup_admin_routes(app, memory, LOG_FILE, MEMORY_DB):
         # Handle submission of new custom info
         memory.add_custom_info(topic, information)
         return RedirectResponse(url="/admin/custom-info", status_code=303)
+    
+    @app.get("/admin/upload-handbook", response_class=HTMLResponse)
+    async def admin_upload_handbook_form(credentials: HTTPBasicCredentials = Depends(verify_admin)):
+        handbook_path = "data/handbook.pdf"
+        handbook_info = ""
+        if os.path.exists(handbook_path):
+            file_size = os.path.getsize(handbook_path)
+            file_size_mb = file_size / (1024 * 1024)
+            modified_time = datetime.fromtimestamp(os.path.getmtime(handbook_path))
+            handbook_info = f"Current handbook: {file_size_mb:.2f} MB, last updated {modified_time.strftime('%Y-%m-%d %H:%M:%S')}"
+        else:
+            handbook_info = "No handbook currently uploaded"
+    
+        return HTMLResponse(content=get_upload_handbook_html(handbook_info))
+
+    @app.post("/admin/upload-handbook")
+    async def admin_upload_handbook(
+        credentials: HTTPBasicCredentials = Depends(verify_admin),
+        file: UploadFile = File(...)
+    ):
+        try:
+            if not file.filename.lower().endswith('.pdf'):
+                raise HTTPException(status_code=400, detail="Only PDF files are allowed")
+        
+            os.makedirs("data", exist_ok=True)
+        
+            handbook_path = "data/handbook.pdf"
+            temp_path = "data/handbook_temp.pdf"
+            backup_path = "data/handbook_backup.pdf"
+        
+            if os.path.exists(handbook_path):
+                shutil.copy2(handbook_path, backup_path)
+        
+            with open(temp_path, "wb") as buffer:
+                shutil.copyfileobj(file.file, buffer)
+        
+            if os.path.getsize(temp_path) == 0:
+                os.remove(temp_path)
+                raise HTTPException(status_code=400, detail="Uploaded file is empty")
+        
+            shutil.move(temp_path, handbook_path)
+        
+            if os.path.exists(backup_path):
+                os.remove(backup_path)
+        
+            return RedirectResponse(url="/admin/custom-info?upload=success", status_code=303)
+        
+        except HTTPException:
+            raise
+        except Exception as e:
+            if os.path.exists(backup_path) and not os.path.exists(handbook_path):
+                shutil.move(backup_path, handbook_path)
+        
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+        
+            raise HTTPException(status_code=500, detail=f"Error uploading handbook: {str(e)}")
 
     @app.get("/admin/custom-info/delete/{info_id}")
     async def admin_delete_info(
@@ -766,6 +824,18 @@ def get_custom_info_html(custom_info):
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Manage Information</title>
         <style>{get_base_style()}</style>
+        <script>
+            window.addEventListener('DOMContentLoaded', function() {{
+                const urlParams = new URLSearchParams(window.location.search);
+                if (urlParams.get('upload') === 'success') {{
+                    const successDiv = document.getElementById('success-message');
+                    if (successDiv) successDiv.style.display = 'block';
+                    const url = new URL(window.location);
+                    url.searchParams.delete('upload');
+                    window.history.replaceState({{}}, '', url);
+                }}
+            }});
+        </script>
     </head>
     <body>
         <div class="container">
@@ -773,10 +843,15 @@ def get_custom_info_html(custom_info):
             
             <h1>Manage Information</h1>
             
+            <div id="success-message" style="display: none; background: #e8f5e8; border-left: 4px solid var(--green); padding: 15px; margin-bottom: 20px; border-radius: 4px;">
+                <strong>Success!</strong> Handbook PDF has been updated successfully.
+            </div>
+            
             <div class="card">
                 <h2>Quick Actions</h2>
                 <a href="/admin/custom-info/add" class="btn">Add New Information</a>
-                <p style="color: var(--muted); margin-top: 10px;">Add new information to improve chatbot responses.</p>
+                <a href="/admin/upload-handbook" class="btn btn-warning">Update Handbook PDF</a>
+                <p style="color: var(--muted); margin-top: 10px;">Add new information or update the handbook PDF file.</p>
             </div>
             
             <div class="card">
@@ -1166,6 +1241,124 @@ def get_feedback_html(feedback_list, total_feedback, avg_rating, rating_distribu
                 </div>
             </div>
         </div>
+    </body>
+    </html>
+    """
+
+def get_upload_handbook_html(handbook_info):
+    """Upload handbook PDF form HTML"""
+    return f"""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Update Handbook PDF</title>
+        <style>{get_base_style()}</style>
+    </head>
+    <body>
+        <div class="container">
+            {get_nav_html()}
+            
+            <h1>Update Handbook PDF</h1>
+            
+            <div class="card">
+                <h2>Current Handbook Status</h2>
+                <p style="padding: 15px; background: var(--light-gray); border-radius: 4px; margin-bottom: 20px;">
+                    {handbook_info}
+                </p>
+                
+                <div style="background: #fff3e0; border-left: 4px solid var(--orange); padding: 15px; margin-bottom: 20px; border-radius: 4px;">
+                    <strong>Warning:</strong> Uploading a new handbook will replace the existing one. 
+                    A backup will be created automatically during the upload process.
+                </div>
+                
+                <form method="post" action="/admin/upload-handbook" enctype="multipart/form-data" id="uploadForm">
+                    <div class="form-group">
+                        <label for="file">Select PDF File:</label>
+                        <input type="file" id="file" name="file" accept=".pdf" required 
+                               style="font-size: 16px; padding: 10px; border: 2px dashed var(--border); border-radius: 4px;">
+                        <small style="color: var(--muted); display: block; margin-top: 8px;">
+                            Only PDF files are accepted.
+                        </small>
+                    </div>
+                    
+                    <div id="uploadProgress" style="display: none; margin: 20px 0;">
+                        <div style="background: var(--light-gray); height: 30px; border-radius: 15px; overflow: hidden;">
+                            <div id="progressBar" style="background: linear-gradient(90deg, var(--blue), var(--green)); height: 100%; width: 0%; transition: width 0.3s; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 14px;"></div>
+                        </div>
+                        <p id="progressText" style="text-align: center; margin-top: 8px; color: var(--muted);"></p>
+                    </div>
+                    
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; margin-top: 20px;">
+                        <a href="/admin/custom-info" class="btn btn-secondary">Cancel</a>
+                        <button type="submit" class="btn btn-warning" id="uploadBtn">Upload Handbook</button>
+                    </div>
+                </form>
+            </div>
+            
+            <div class="card">
+                <h2>Important Notes</h2>
+                <ul style="line-height: 1.8;">
+                    <li>The chatbot will automatically use the new handbook once uploaded</li>
+                    <li>Large files may take a moment to upload - please be patient</li>
+                    <li>Ensure the PDF is not corrupted before uploading</li>
+                    <li>The previous handbook will be backed up automatically</li>
+                </ul>
+            </div>
+        </div>
+        
+        <script>
+            const form = document.getElementById('uploadForm');
+            const uploadBtn = document.getElementById('uploadBtn');
+            const uploadProgress = document.getElementById('uploadProgress');
+            const progressBar = document.getElementById('progressBar');
+            const progressText = document.getElementById('progressText');
+            const fileInput = document.getElementById('file');
+            
+            fileInput.addEventListener('change', function(e) {{
+                const file = e.target.files[0];
+                if (file) {{
+                    if (!file.name.toLowerCase().endsWith('.pdf')) {{
+                        alert('Please select a PDF file only.');
+                        fileInput.value = '';
+                        return;
+                    }}
+                    const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
+                    progressText.textContent = `Selected: ${{file.name}} (${{sizeMB}} MB)`;
+                    progressText.style.display = 'block';
+                }}
+            }});
+            
+            form.addEventListener('submit', function(e) {{
+                const file = fileInput.files[0];
+                if (!file) {{
+                    e.preventDefault();
+                    alert('Please select a PDF file to upload.');
+                    return;
+                }}
+                
+                uploadBtn.disabled = true;
+                uploadBtn.textContent = 'Uploading...';
+                uploadProgress.style.display = 'block';
+                progressBar.style.width = '0%';
+                progressBar.textContent = '0%';
+                progressText.textContent = 'Uploading handbook...';
+                
+                let progress = 0;
+                const interval = setInterval(function() {{
+                    progress += 5;
+                    if (progress <= 90) {{
+                        progressBar.style.width = progress + '%';
+                        progressBar.textContent = progress + '%';
+                    }}
+                }}, 200);
+                
+                setTimeout(function() {{
+                    clearInterval(interval);
+                }}, 5000);
+            }});
+        </script>
     </body>
     </html>
     """
