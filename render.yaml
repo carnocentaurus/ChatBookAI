@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: student-handbook-backend
+    name: ChatBookAIRender
     env: python
     plan: free
     runtime: python
