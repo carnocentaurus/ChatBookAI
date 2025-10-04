@@ -5,7 +5,20 @@ services:
     plan: free
     runtime: python
     buildCommand: |
+      curl -fsSL https://github.com/pyenv/pyenv-installer/raw/master/bin/pyenv-installer | bash
+      export PATH="$HOME/.pyenv/bin:$PATH"
+      eval "$(pyenv init -)"
       pyenv install -s 3.10.11
       pyenv global 3.10.11
+      python --version
       pip install -r requirements.txt
     startCommand: uvicorn api:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: LANGCHAIN_API_KEY
+        sync: false
+      - key: LANGCHAIN_TRACING_V2
+        sync: false
+      - key: LANGCHAIN_PROJECT
+        sync: false
+      - key: GENAI_API_KEY
+        sync: false
