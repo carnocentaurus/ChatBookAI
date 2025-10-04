@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: ChatBookAI
+    env: python
+    plan: free
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn api:app --host 0.0.0.0 --port 8000
+    envVars:
+      - key: LANGCHAIN_API_KEY
+        sync: false
+      - key: LANGCHAIN_TRACING_V2
+        sync: false
+      - key: LANGCHAIN_PROJECT
+        sync: false
+      - key: GENAI_API_KEY
+        sync: false
+    disk:
+      name: chroma-disk
+      mountPath: /var/data/chroma
+      sizeGB: 1
