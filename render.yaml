@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: ChatBookAI
+    name: student-handbook-backend
     env: python
     plan: free
     runtime: python
@@ -15,7 +15,3 @@ services:
         sync: false
       - key: GENAI_API_KEY
         sync: false
-    disk:
-      name: chroma-disk
-      mountPath: /var/data/chroma
-      sizeGB: 1
