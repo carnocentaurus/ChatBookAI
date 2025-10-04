@@ -13,7 +13,7 @@ sentence-transformers==3.0.1
 transformers==4.44.2
 
 # --- Vector database ---
-chromadb==0.5.5
+chromadb>=0.5.6,<0.6.0
 
 # --- LLM integrations ---
 # ollama==0.3.3   # ⚠️ Commented out (requires local server)
