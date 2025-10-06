@@ -25,6 +25,11 @@ void main() {
 
 // Auto-detect platform and return base server URL
 String getBaseUrl() {
+  // Use deployed Render backend for all platforms
+  return "https://chatbookai-render-2.onrender.com";
+  
+  // For local testing, uncomment the code below:
+  /*
   if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
     return "http://127.0.0.1:8000"; // Desktop
   } else if (Platform.isAndroid || Platform.isIOS) {
@@ -32,6 +37,7 @@ String getBaseUrl() {
   } else {
     throw UnsupportedError("Unsupported platform");
   }
+  */
 }
 
 // Generate unique session ID
@@ -54,7 +60,7 @@ Future<String> queryHandbook(String question) async {
       return "Server error: ${response.statusCode}";
     }
   } catch (e) {
-    return "⚠️ Cannot connect to server. Make sure FastAPI is running.";
+    return "⚠️ Cannot connect to server. Error: $e";
   }
 }
 
@@ -97,7 +103,7 @@ Future<Map<String, dynamic>> submitFeedback(
         "feedback_text": feedbackText,
         "rating": rating,
         "user_type": userType,
-        "session_id": sessionId  // Add this
+        "session_id": sessionId
       }),
     );
 
@@ -111,7 +117,7 @@ Future<Map<String, dynamic>> submitFeedback(
       return {"success": false, "message": "Server error: ${response.statusCode}"};
     }
   } catch (e) {
-    return {"success": false, "message": "Cannot connect to server"};
+    return {"success": false, "message": "Cannot connect to server: $e"};
   }
 }
 
@@ -181,18 +187,18 @@ class _MainScreenState extends State<MainScreen> {
 
   // ---------- FEEDBACK ----------
   void _showFeedbackPage() {
-  showModalBottomSheet(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: Colors.transparent,
-    builder: (context) {
-      return _buildSheet(
-        title: "Send Feedback",
-        child: FeedbackPage(sessionId: _sessionId),  // Pass session ID here
-      );
-    },
-  );
-}
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return _buildSheet(
+          title: "Send Feedback",
+          child: FeedbackPage(sessionId: _sessionId),
+        );
+      },
+    );
+  }
 
   // ---------- REUSABLE SHEET BUILDER ----------
   Widget _buildSheet({required String title, required Widget child}) {
