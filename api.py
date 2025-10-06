@@ -676,6 +676,7 @@ def load_handbook():
         print(f"❌ Error reading handbook PDF: {e}")
         return ""  # Return empty string if extraction fails 
 
+'''
 # Register a startup event for FastAPI (runs automatically when the server starts)
 @app.on_event("startup")
 async def startup_event():
@@ -714,6 +715,58 @@ async def startup_event():
         # On error, reset globals to None
         embeddings, db, retriever = None, None, None
         print(f"❌ Error initializing embeddings/db: {e}")
+'''
+
+async def initialize_resources():
+    """Load resources in background without blocking startup"""
+    global HANDBOOK_TEXT, embeddings, db, retriever
+    
+    loop = asyncio.get_event_loop()
+    
+    try:
+        print("📚 Loading handbook...")
+        HANDBOOK_TEXT = await loop.run_in_executor(executor, lambda: load_handbook())
+        print(f"✅ Handbook loaded: {len(HANDBOOK_TEXT)} characters")
+    except Exception as e:
+        HANDBOOK_TEXT = ""
+        print(f"❌ Error loading handbook: {e}")
+    
+    try:
+        print("🧠 Loading embeddings and database...")
+        embeddings, db, retriever = await loop.run_in_executor(
+            executor, lambda: load_embeddings_and_db()
+        )
+        
+        if all([embeddings, db, retriever]):
+            print("🎉 All resources ready!")
+        else:
+            print("❌ Resource initialization incomplete")
+    except Exception as e:
+        embeddings, db, retriever = None, None, None
+        print(f"❌ Error initializing embeddings/db: {e}")
+
+# Add these endpoints
+@app.get("/")
+async def root():
+    return {"status": "Server is running!", "message": "Hello from Render"}
+
+@app.get("/initialize")
+async def initialize():
+    """Manually trigger initialization"""
+    try:
+        asyncio.create_task(initialize_resources())
+        return {"message": "Initialization started in background"}
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/status")
+async def status():
+    return {
+        "handbook_loaded": bool(HANDBOOK_TEXT),
+        "embeddings_ready": embeddings is not None,
+        "db_ready": db is not None,
+        "retriever_ready": retriever is not None
+    }
 
 # Define a GET endpoint at /report (used to fetch usage statistics)
 @app.get("/report")
