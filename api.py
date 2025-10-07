@@ -682,27 +682,29 @@ def load_embeddings_and_db():
 
 def load_handbook():
     """Load handbook text from PDF (simple extraction)"""
+    import os
+    
+    print(f"📂 Looking for PDF at: {HANDBOOK_FILE}")
+    print(f"📂 Current directory: {os.getcwd()}")
+    print(f"📂 PDF exists? {os.path.exists(HANDBOOK_FILE)}")
+    
+    if not os.path.exists(HANDBOOK_FILE):
+        print(f"❌ PDF file not found!")
+        print(f"📂 Files in current directory: {os.listdir('.')}")
+        return ""
+    
     try:
-        # Import PyPDF2 reader inside the function to avoid global dependency issues
         from PyPDF2 import PdfReader
-        
-        # Open the handbook PDF file
         reader = PdfReader(HANDBOOK_FILE)
-        
-        # Initialize an empty string to store extracted text
         text = ""
-        
-        # Loop through each page of the PDF and extract text
         for page in reader.pages:
             text += page.extract_text() + "\n"
-        
-        # Return the complete extracted text, stripped of trailing whitespace
         return text.strip()
-    
     except Exception as e:
-        # Handle any error while reading the handbook and print the issue
         print(f"❌ Error reading handbook PDF: {e}")
-        return ""  # Return empty string if extraction fails 
+        import traceback
+        traceback.print_exc()
+        return ""
 
 # Register a startup event for FastAPI (runs automatically when the server starts)
 @app.on_event("startup")
