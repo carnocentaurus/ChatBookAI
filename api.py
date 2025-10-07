@@ -707,41 +707,53 @@ def load_handbook():
 # Register a startup event for FastAPI (runs automatically when the server starts)
 @app.on_event("startup")
 async def startup_event():
-    # Declare globals so they can be used across the whole app
     global HANDBOOK_TEXT, embeddings, db, retriever
+    
+    print("🚀 Server starting...")
+    
+    # Initialize as None so server can start
+    HANDBOOK_TEXT = ""
+    embeddings = None
+    db = None
+    retriever = None
+    
+    # Load everything in background WITHOUT BLOCKING
+    asyncio.create_task(delayed_initialization())
+    
+    print("✅ Server started! Initialization running in background...")
 
-    print("🚀 Starting server with admin panel...")
-
-    # Get the main asyncio event loop (needed for async + executor)
+async def delayed_initialization():
+    """Run after server starts"""
+    global HANDBOOK_TEXT, embeddings, db, retriever
+    
+    # Wait 5 seconds for server to fully start
+    await asyncio.sleep(5)
+    
     loop = asyncio.get_event_loop()
-
+    
     try:
-        # Run the load_handbook() function in a background thread (executor),
-        # because PDF reading is blocking and we don’t want to freeze the event loop
+        print("📚 Loading handbook...")
         HANDBOOK_TEXT = await loop.run_in_executor(executor, lambda: load_handbook())
-        
-        # Print confirmation with the size of the loaded text
         print(f"✅ Handbook loaded: {len(HANDBOOK_TEXT)} characters")
     except Exception as e:
-        # If loading fails, reset HANDBOOK_TEXT to empty string
         HANDBOOK_TEXT = ""
         print(f"❌ Error loading handbook: {e}")
-
+    
     try:
-        # Run the embeddings + database loading in a background thread as well
+        print("🧠 Loading embeddings and database (this may take 3-5 minutes)...")
         embeddings, db, retriever = await loop.run_in_executor(
             executor, lambda: load_embeddings_and_db()
         )
         
-        # Check if all three were successfully loaded
         if all([embeddings, db, retriever]):
-            print("🎉 Server ready with memory and admin capabilities!")
+            print("🎉 All resources ready!")
         else:
-            print("❌ Server initialization failed (embeddings/db)")
+            print("❌ Resource initialization incomplete")
     except Exception as e:
-        # On error, reset globals to None
         embeddings, db, retriever = None, None, None
         print(f"❌ Error initializing embeddings/db: {e}")
+        import traceback
+        traceback.print_exc()
 
 async def initialize_resources():
     """Load resources in background without blocking startup"""
