@@ -690,16 +690,24 @@ def load_handbook():
     
     if not os.path.exists(HANDBOOK_FILE):
         print(f"❌ PDF file not found!")
-        print(f"📂 Files in current directory: {os.listdir('.')}")
         return ""
     
     try:
+        print("📖 Attempting to open PDF...")
         from PyPDF2 import PdfReader
+        
         reader = PdfReader(HANDBOOK_FILE)
+        print(f"✅ PDF opened! Pages: {len(reader.pages)}")
+        
         text = ""
-        for page in reader.pages:
-            text += page.extract_text() + "\n"
+        for i, page in enumerate(reader.pages):
+            print(f"📄 Extracting page {i+1}/{len(reader.pages)}...")
+            page_text = page.extract_text()
+            text += page_text + "\n"
+        
+        print(f"✅ Extraction complete! Total characters: {len(text)}")
         return text.strip()
+        
     except Exception as e:
         print(f"❌ Error reading handbook PDF: {e}")
         import traceback
