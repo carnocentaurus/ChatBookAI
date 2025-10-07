@@ -625,32 +625,60 @@ def log_query(query_text: str, answer_text: str, answered_flag: bool, chunks_fou
             pass
 
 def load_embeddings_and_db():
-    """Load embeddings and database"""
+    """Load embeddings and database, create if doesn't exist"""
     try:
-        # Load a sentence-transformer embedding model from HuggingFace
+        import os
+        
+        # Load embeddings model
         embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+        print("✅ Embeddings model loaded")
         
-        # Load the Chroma vector database, stored in the "data/chroma_db" folder,
-        # and connect it with the embedding model
-        db = Chroma(persist_directory="data/chroma_db", embedding_function=embeddings)
+        db_path = "data/chroma_db"
         
-        # Create a retriever from the Chroma DB
-        # - search_type="mmr" means it uses Maximal Marginal Relevance (balances relevance & diversity)
-        # - k=15 → return top 15 results
-        # - fetch_k=35 → fetch 35 candidates before narrowing down
-        # - lambda_mult=0.5 → balance between relevance and diversity
-        retriever = db.as_retriever(search_type="mmr", search_kwargs={"k": 15, "fetch_k": 35, "lambda_mult": 0.5})
+        # Check if database exists
+        if os.path.exists(db_path) and os.listdir(db_path):
+            print("📂 Loading existing Chroma database...")
+            db = Chroma(persist_directory=db_path, embedding_function=embeddings)
+        else:
+            print("🔨 Creating new Chroma database (first time)...")
+            
+            # Make sure the handbook is loaded
+            if not HANDBOOK_TEXT:
+                print("❌ Cannot create database: Handbook not loaded")
+                return None, None, None
+            
+            # Split text into chunks
+            from langchain.text_splitter import RecursiveCharacterTextSplitter
+            text_splitter = RecursiveCharacterTextSplitter(
+                chunk_size=1000,
+                chunk_overlap=200
+            )
+            chunks = text_splitter.split_text(HANDBOOK_TEXT)
+            print(f"📄 Split into {len(chunks)} chunks")
+            
+            # Create database from chunks
+            db = Chroma.from_texts(
+                texts=chunks,
+                embedding=embeddings,
+                persist_directory=db_path
+            )
+            db.persist()
+            print("💾 Database created and saved")
         
-        # Print confirmation if everything loads fine
-        print("✅ Database loaded successfully")
+        # Create retriever
+        retriever = db.as_retriever(
+            search_type="mmr", 
+            search_kwargs={"k": 15, "fetch_k": 35, "lambda_mult": 0.5}
+        )
         
-        # Return embeddings, database, and retriever so other functions can use them
+        print("✅ Database and retriever ready")
         return embeddings, db, retriever
     
     except Exception as e:
-        # Handle any error during database loading and print the issue
-        print(f"Database loading error: {e}")
-        return None, None, None  # Return empty placeholders if something fails
+        print(f"💥 Database loading error: {e}")
+        import traceback
+        traceback.print_exc()
+        return None, None, None
 
 def load_handbook():
     """Load handbook text from PDF (simple extraction)"""
@@ -676,7 +704,6 @@ def load_handbook():
         print(f"❌ Error reading handbook PDF: {e}")
         return ""  # Return empty string if extraction fails 
 
-'''
 # Register a startup event for FastAPI (runs automatically when the server starts)
 @app.on_event("startup")
 async def startup_event():
@@ -715,7 +742,6 @@ async def startup_event():
         # On error, reset globals to None
         embeddings, db, retriever = None, None, None
         print(f"❌ Error initializing embeddings/db: {e}")
-'''
 
 async def initialize_resources():
     """Load resources in background without blocking startup"""

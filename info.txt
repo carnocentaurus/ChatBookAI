@@ -19,3 +19,31 @@ next:
 3. find a way to access admin panel in other devices
 4. make the system apk work on phone
 5. change app name from gsu_chatbot_app to ChatBook AI
+
+def load_embeddings_and_db():
+    """Load embeddings and database"""
+    try:
+        # Load a sentence-transformer embedding model from HuggingFace
+        embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+        
+        # Load the Chroma vector database, stored in the "data/chroma_db" folder,
+        # and connect it with the embedding model
+        db = Chroma(persist_directory="data/chroma_db", embedding_function=embeddings)
+        
+        # Create a retriever from the Chroma DB
+        # - search_type="mmr" means it uses Maximal Marginal Relevance (balances relevance & diversity)
+        # - k=15 → return top 15 results
+        # - fetch_k=35 → fetch 35 candidates before narrowing down
+        # - lambda_mult=0.5 → balance between relevance and diversity
+        retriever = db.as_retriever(search_type="mmr", search_kwargs={"k": 15, "fetch_k": 35, "lambda_mult": 0.5})
+        
+        # Print confirmation if everything loads fine
+        print("✅ Database loaded successfully")
+        
+        # Return embeddings, database, and retriever so other functions can use them
+        return embeddings, db, retriever
+    
+    except Exception as e:
+        # Handle any error during database loading and print the issue
+        print(f"Database loading error: {e}")
+        return None, None, None  # Return empty placeholders if something fails
