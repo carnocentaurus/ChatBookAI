@@ -1,56 +1,62 @@
-import 'package:flutter/material.dart';
-import 'main.dart';
+// faq.dart — shows frequently asked questions from the chatbot data.
 
-class FaqPage extends StatefulWidget {
-  final Function(String)? onQuestionTap;
-  
+import 'package:flutter/material.dart'; // gives access to UI widgets (buttons, text, etc.)
+import 'main.dart'; // lets this file use functions from main.dart (like fetchReports)
+
+class FaqPage extends StatefulWidget { // a screen that can update itself
+  final Function(String)? onQuestionTap; // lets main.dart know if a question is tapped
+
   const FaqPage({Key? key, this.onQuestionTap}) : super(key: key);
 
   @override
-  State<FaqPage> createState() => _FaqPageState();
+  State<FaqPage> createState() => _FaqPageState(); // connects logic part
+  // ❌ Remove → the page won’t know what state (logic) to use
 }
 
-class _FaqPageState extends State<FaqPage> {
-  Map<String, dynamic>? _reportData;
-  bool _loading = true;
-  String? _error;
+class _FaqPageState extends State<FaqPage> { // this handles the logic of FAQ page
+  Map<String, dynamic>? _reportData; // stores data fetched from the server
+  bool _loading = true; // shows loading spinner
+  String? _error; // shows error message if connection fails
 
   @override
-  void initState() {
+  void initState() { // runs automatically when the page opens
     super.initState();
-    _fetchReport();
+    _fetchReport(); // gets FAQ data from the backend
+    // ❌ Remove → page will never load FAQ data
   }
 
+  // fetch data from backend
   Future<void> _fetchReport() async {
     setState(() {
-      _loading = true;
-      _error = null;
+      _loading = true; // show loading spinner
+      _error = null; // reset any old errors
     });
 
     try {
-      final data = await fetchReports();
+      final data = await fetchReports(); // asks the backend for FAQ data
       setState(() {
-        _reportData = data;
-        _loading = false;
+        _reportData = data; // store data for display
+        _loading = false; // stop showing spinner
       });
     } catch (e) {
       setState(() {
-        _error = "⚠️ Cannot connect to server.";
-        _loading = false;
+        _error = "⚠️ Cannot connect to server."; // show error message
+        _loading = false; // stop spinner
       });
     }
+    // ❌ Remove try/catch → app crashes if there’s no internet
   }
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+    return Column( // lays everything vertically
       children: [
-        // MAIN CONTENT
-        Expanded(
+        // ---------- MAIN CONTENT ----------
+        Expanded( // fills the available space
           child: _loading
-              ? const Center(child: CircularProgressIndicator())
+              ? const Center(child: CircularProgressIndicator()) // shows spinner while loading
               : _error != null
-                  ? Center(
+                  ? Center( // shows error and retry button
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
@@ -60,34 +66,40 @@ class _FaqPageState extends State<FaqPage> {
                           ),
                           const SizedBox(height: 16),
                           ElevatedButton(
-                            onPressed: _fetchReport,
+                            onPressed: _fetchReport, // reload data
                             child: const Text("Retry"),
                           ),
                         ],
                       ),
                     )
                   : _reportData == null
-                      ? const Center(child: Text("No FAQ data available."))
+                      ? const Center(
+                          child: Text("No FAQ data available.")) // if no data
                       : ListView(
                           padding: const EdgeInsets.all(16),
                           children: [
                             const SizedBox(height: 8),
                             const SizedBox(height: 12),
-                            ..._buildFaqList(),
+                            ..._buildFaqList(), // builds cards for each FAQ
                           ],
                         ),
         ),
       ],
     );
+    // ❌ Remove Expanded → layout may overflow the screen
   }
 
+  // ---------- BUILDS LIST OF FAQ CARDS ----------
   List<Widget> _buildFaqList() {
-    final faqList = (_reportData?['most_frequent_questions'] as List<dynamic>?) ?? [];
-    
+    final faqList =
+        (_reportData?['most_frequent_questions'] as List<dynamic>?) ?? [];
+    // gets list of top questions; empty if none found
+
     if (faqList.isEmpty) {
       return [
         Card(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           child: const Padding(
             padding: EdgeInsets.all(16.0),
             child: Text(
@@ -101,26 +113,28 @@ class _FaqPageState extends State<FaqPage> {
           ),
         ),
       ];
+      // ❌ Remove → app will show nothing when no FAQs exist
     }
 
-    // Build FAQ cards with rank numbers
+    // builds each FAQ card with a number (rank)
     return faqList.asMap().entries.map((entry) {
-      final int index = entry.key;
-      final dynamic faqData = entry.value;
-      final int rank = index + 1;
+      final int index = entry.key; // card number
+      final dynamic faqData = entry.value; // each question
+      final int rank = index + 1; // 1-based rank number
       final question = faqData['question']?.toString() ?? 'Unknown question';
       final count = faqData['count']?.toString() ?? '0';
-      return _buildFaqCard(question, count, rank);
+      return _buildFaqCard(question, count, rank); // make a card for each
     }).toList();
   }
 
+  // ---------- BUILDS EACH FAQ CARD ----------
   Widget _buildFaqCard(String question, String count, int rank) {
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      elevation: 2,
-      margin: const EdgeInsets.symmetric(vertical: 6),
+      elevation: 2, // small shadow
+      margin: const EdgeInsets.symmetric(vertical: 6), // space between cards
       child: ListTile(
-        leading: Container(
+        leading: Container( // round number circle on the left
           width: 40,
           height: 40,
           decoration: BoxDecoration(
@@ -130,7 +144,7 @@ class _FaqPageState extends State<FaqPage> {
           ),
           child: Center(
             child: Text(
-              rank.toString(),
+              rank.toString(), // shows 1, 2, 3...
               style: const TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
@@ -140,44 +154,51 @@ class _FaqPageState extends State<FaqPage> {
           ),
         ),
         title: Text(
-          question.length > 80 ? "${question.substring(0, 80)}..." : question,
+          question.length > 80
+              ? "${question.substring(0, 80)}..." // trims long questions
+              : question,
           style: const TextStyle(fontWeight: FontWeight.w500),
         ),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              "Tap to ask chatbot",
+              "Tap to ask chatbot", // hint for the user
               style: TextStyle(fontSize: 12, color: Colors.grey[600]),
             ),
           ],
         ),
-        trailing: Container(
+        trailing: Container( // shows count bubble on the right
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
           decoration: BoxDecoration(
             color: Colors.blueAccent.withOpacity(0.15),
             borderRadius: BorderRadius.circular(12),
           ),
           child: Text(
-            count,
+            count, // number of times question was asked
             style: const TextStyle(
-                fontSize: 14, fontWeight: FontWeight.bold, color: Colors.blue),
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: Colors.blue),
           ),
         ),
         onTap: () {
-          // Navigate to chat and auto-query the question
+          // when the user taps a question card
           if (widget.onQuestionTap != null) {
-            widget.onQuestionTap!(question);
-            
-            // Show brief feedback
+            widget.onQuestionTap!(question); // sends the question to chat.dart
+
+            // small notification popup
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text("Asking: ${question.length > 50 ? question.substring(0, 50) + '...' : question}"),
+                content: Text(
+                  "Asking: ${question.length > 50 ? question.substring(0, 50) + '...' : question}",
+                ),
                 duration: Duration(seconds: 2),
                 backgroundColor: Colors.green,
               ),
             );
           }
+          // ❌ Remove onTap → tapping FAQ won’t send question to chatbot
         },
       ),
     );
