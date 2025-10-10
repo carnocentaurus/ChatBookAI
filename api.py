@@ -1,99 +1,109 @@
 # api.py
 
-import os
-import csv
-import json
-import re
-import time
-import asyncio
-import sqlite3
-from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor
-from collections import Counter
-from typing import List, Dict, Optional
-from urllib.parse import quote
+# python modules
+import os                   # Used for file paths and environment variables
+import csv                  # For reading and writing CSV files
+import json                 # For handling JSON data
+import re                   # Regular expressions for text pattern matching
+import time                 # Used for tracking time or delays
+import asyncio              # Enables asynchronous operations
+import sqlite3              # Connects and interacts with SQLite database
+from datetime import datetime  # To handle dates and times
+from concurrent.futures import ThreadPoolExecutor  # For running tasks in background threads
+from collections import Counter  # Helps count items (like top FAQ questions)
+from typing import List, Dict, Optional  # Type hints for better code readability
+from urllib.parse import quote  # Encodes URLs safely
 
-from dotenv import load_dotenv
-load_dotenv()  # This MUST happen before any client initialization
+from dotenv import load_dotenv  # Used to load .env configuration files
+load_dotenv()  # Loads environment variables (API keys, paths, etc.) from .env file
 
-from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+# fastapi
+from fastapi import FastAPI, Request  # FastAPI for backend API creation
+from fastapi.middleware.cors import CORSMiddleware  # Allows frontend (Flutter app) to access the backend
+from pydantic import BaseModel  # Used to define structured request/response data
 
-import google.generativeai as genai
+# gemini
+import google.generativeai as genai  # Google Gemini API integration for LLM responses
 
-from langsmith import traceable, Client
-from langsmith.run_helpers import get_current_run_tree
+# langsmith
+from langsmith import traceable, Client  # Used for tracking AI performance and debugging
+from langsmith.run_helpers import get_current_run_tree  # Helps trace detailed run information
+client = Client()  # Creates a client to log or monitor model performance in LangSmith
 
-client = Client()
+# langchain and chroma vector db
+from langchain_huggingface import HuggingFaceEmbeddings  # Converts text into embeddings (numerical form)
+from langchain_chroma import Chroma  # Local vector database (stores and retrieves documents)
+from langchain.docstore.document import Document  # Represents text documents in LangChain
 
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_chroma import Chroma
-from langchain.docstore.document import Document
+# admin
+from admin import setup_admin_routes  # Imports routes for admin panel (feedback, reports, etc.)
 
-from admin import setup_admin_routes
+api_key = os.getenv("LANGCHAIN_API_KEY")  # gets the key from the .env file
+print(f"Using API Key: {api_key[:20]}...{api_key[-10:] if api_key else 'NONE'}")  # shows part of the key
+print(f"Key length: {len(api_key) if api_key else 0}")  # shows how long the key is
+print(f"LANGCHAIN_TRACING_V2: {os.getenv('LANGCHAIN_TRACING_V2')}")  # shows tracing setting
+print(f"LANGCHAIN_PROJECT: {os.getenv('LANGCHAIN_PROJECT')}")  # shows project name
 
-api_key = os.getenv("LANGCHAIN_API_KEY")
-print(f"Using API Key: {api_key[:20]}...{api_key[-10:] if api_key else 'NONE'}")
-print(f"Key length: {len(api_key) if api_key else 0}")
-print(f"LANGCHAIN_TRACING_V2: {os.getenv('LANGCHAIN_TRACING_V2')}")
-print(f"LANGCHAIN_PROJECT: {os.getenv('LANGCHAIN_PROJECT')}")
-
-# Test LangSmith connection
+# Test if connection works
 def test_langsmith_connection():
     try:
-        test_client = Client()
-        projects = list(test_client.list_projects(limit=1))
+        test_client = Client()  # tries to connect
+        projects = list(test_client.list_projects(limit=1))  # checks if any project can be found
         print("✅ LangSmith connection successful")
-        return True
+        return True  # returns true if it works
     except Exception as e:
         print(f"❌ LangSmith connection failed: {e}")
         return False
 
-test_langsmith_connection()
+test_langsmith_connection()  # runs the test when app starts
 
-last_run_ids = {}  # session_id -> run_id mapping
+last_run_ids = {}  # keeps a list of user sessions
 
 class FeedbackSubmission(BaseModel):
-    feedback_text: str
-    rating: int
-    user_type: str
-    session_id: Optional[str] = None  # Add this field
+    feedback_text: str  # user’s written feedback
+    rating: int         # number rating from user
+    user_type: str      # who gave the feedback (student, admin, etc.)
+    session_id: Optional[str] = None  # used to track feedback per session
 
-# Configure Gemini
-if os.environ.get("GENAI_API_KEY"): # check if api key exists
-    genai.configure(api_key=os.environ["GENAI_API_KEY"]) # sets up Gemini so we can send requests using the api key.
+# Set up Gemini
+if os.environ.get("GENAI_API_KEY"):  # checks if a key exists first
+    genai.configure(api_key=os.environ["GENAI_API_KEY"])  # connects Gemini using the key
     generation_config = genai.types.GenerationConfig(
         temperature=0.1, top_p=0.8, top_k=40, max_output_tokens=2048
-        # temperature=0.1 → makes output less random, more focused.
-        # top_p=0.8 → limits randomness by sampling from only the most likely tokens (nucleus sampling).
-        # top_k=40 → considers only the top 40 possible next words.
-        # max_output_tokens=2048 → limits length of response.
+        # temperature=0.1 → makes answers steady and focused
+        # top_p=0.8 → keeps only the most likely words
+        # top_k=40 → limits how many choices it looks at
+        # max_output_tokens=2048 → limits how long the answer can be
     )
-    # Loads Gemini 2.5 Flash with the config above.
-    model = genai.GenerativeModel("gemini-2.5-flash", generation_config=generation_config)
-else: # Prevents crashes if we runs the app without setting an API key
-    print("⚠️ GENAI_API_KEY environment variable not set")
-    model = None
+    model = genai.GenerativeModel("gemini-2.5-flash", generation_config=generation_config)  # loads the model
+else:  # runs when no API key is found
+    print("⚠️ GENAI_API_KEY environment variable not set")  # warning message
+    model = None  # prevents crash if no key is set
 
-app = FastAPI() # main api server
-# allows requests from any origin (*).
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+app = FastAPI()  # starts the main app
+app.add_middleware(  # allows the app to receive data from anywhere
+    CORSMiddleware,
+    allow_origins=["*"],  # allows all sources
+    allow_credentials=True,
+    allow_methods=["*"],  # allows all actions (GET, POST, etc.)
+    allow_headers=["*"]   # allows all headers
+)
 
-LOG_FILE = "data/query_log.csv"
-FEEDBACK_FILE = "data/feedback.csv"
-HANDBOOK_FILE = "data/handbook.pdf"
-HANDBOOK_TEXT = "" # Will hold extracted handbook text after loading
-MEMORY_DB = "data/chatbot_memory.db"
-CUSTOM_INFO_FILE = "data/custom_info.json"
-executor = ThreadPoolExecutor()  # Runs heavy tasks in parallel threads
+# File and data setup
+LOG_FILE = "data/query_log.csv"  # where chat history is saved
+FEEDBACK_FILE = "data/feedback.csv"  # where feedback is stored
+HANDBOOK_FILE = "data/handbook.pdf"  # the student handbook file
+HANDBOOK_TEXT = ""  # will store handbook text after loading
+MEMORY_DB = "data/chatbot_memory.db"  # stores chat memory
+CUSTOM_INFO_FILE = "data/custom_info.json"  # holds extra handbook data
+executor = ThreadPoolExecutor()  # runs heavy tasks in the background
 
-# Global variables
-embeddings = None # will hold the HuggingFace embeddings model (turns text into vectors).
-db = None # will be the Chroma vector database (stores handbook embeddings).
-retriever = None # will connect to db and fetch relevant chunks when user asks a question.
+# Main tools (will be set up later)
+embeddings = None  # converts text to numbers
+db = None           # stores those numbers (database)
+retriever = None    # helps find related info quickly
 
-last_run_ids = {}
+last_run_ids = {}  # keeps track of sessions
 
 def sanitize_text(text: str) -> str:
     """Clean text before saving to DB or CSV - Enhanced version that preserves formatting"""
@@ -136,11 +146,13 @@ def sanitize_text(text: str) -> str:
     
     return text.strip() # Trim leading/trailing spaces and return the clean text
 
+
 # Memory system 
 class ChatbotMemory:
     def __init__(self):
         self.init_database()  # Initialize the SQLite database (create tables if not exist)
         self.custom_info = self.load_custom_info()  # Load custom info from JSON file into memory
+
     
     # Initialize SQLite database for conversation memory
     def init_database(self):
@@ -175,6 +187,7 @@ class ChatbotMemory:
         conn.commit()  # Save the changes
         conn.close()  # Close the database connection
 
+
     # Load custom information
     def load_custom_info(self) -> Dict:
         try:
@@ -194,6 +207,7 @@ class ChatbotMemory:
                 json.dump(self.custom_info, f, indent=2, ensure_ascii=False)
         except Exception as e:
             print(f"Error saving custom info: {e}")
+
     
     # Get or create a session with error handling
     def get_or_create_session(self, session_id: str) -> str:
@@ -218,6 +232,7 @@ class ChatbotMemory:
         except Exception as e:
             print(f"❌ Error creating/getting session: {e}")  # Print error if DB fails
             return sanitize_text(session_id)  # Still return sanitized ID
+        
     
     # Add conversation to memory with enhanced safety
     def add_conversation(self, session_id: str, user_message: str, bot_response: str, context_used: str = ""):
@@ -260,6 +275,7 @@ class ChatbotMemory:
             except:
                 pass
 
+
     # Get recent conversations for context
     def get_recent_conversations(self, session_id: str, limit: int = 3) -> List[Dict]:
         try:
@@ -295,6 +311,7 @@ class ChatbotMemory:
         except Exception as e:
             print(f"❌ Error retrieving conversations: {e}")
             return []  # Return empty list if error
+        
 
     def add_custom_info(self, topic: str, information: str):
         """Add custom information with sanitization"""
@@ -317,6 +334,7 @@ class ChatbotMemory:
         except Exception as e:
             print(f"❌ Error adding custom info: {e}")
 
+
     # Get relevant custom information for the query
     def get_relevant_custom_info(self, query: str) -> str:
         try:
@@ -338,6 +356,7 @@ class ChatbotMemory:
         except Exception as e:
             print(f"❌ Error getting custom info: {e}")
             return ""
+        
 
 # Initialize memory system
 memory = ChatbotMemory()
@@ -359,6 +378,7 @@ GSU_SYNONYMS = {
     "faculty": ["teachers", "professors", "instructors"],
 }
 
+
 # Expand query with relevant synonyms
 def expand_query(query):
     expanded = [query]  # Start list with the original query
@@ -373,6 +393,7 @@ def expand_query(query):
     # Return a space-separated string of unique terms (original + synonyms)
     return " ".join(list(set(expanded)))
 
+
 # Extract important keywords, excluding common stop words
 def extract_keywords(query):
     # Define common stop words that should be ignored
@@ -386,6 +407,7 @@ def extract_keywords(query):
     
     # Keep only words that are not stop words and have length > 2
     return [w for w in words if w not in stop_words and len(w) > 2]
+
 
 # Multi-strategy retrieval for comprehensive results
 async def smart_retrieval(query, retriever, handbook_text):
@@ -448,6 +470,7 @@ async def smart_retrieval(query, retriever, handbook_text):
         result_docs.append(doc)
     
     return result_docs  # Final set of retrieved docs
+
 
 # Build context including memory and custom info (minimal conversation history)
 def build_context_with_memory(docs, query, session_id, max_length=8000):
@@ -547,283 +570,224 @@ def build_context_with_memory(docs, query, session_id, max_length=8000):
     full_context = "\n".join(context_parts)  # Combine all sections into one text
     return sanitize_text(full_context)  # Return clean, safe context
 
-def log_query(query_text: str, answer_text: str, answered_flag: bool, chunks_found: int):
-    """Log queries and answers to CSV with resolved date support"""
 
-    clean_query = sanitize_text(query_text)
-    clean_answer = sanitize_text(answer_text)
+def log_query(query_text: str, answer_text: str, answered_flag: bool, chunks_found: int):
+    """Saves every question and answer into a file and database"""
+
+    clean_query = sanitize_text(query_text)  # cleans the question
+    clean_answer = sanitize_text(answer_text)  # cleans the answer
     
     try:
-        os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
-        file_exists = os.path.isfile(LOG_FILE)
+        os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)  # makes sure the folder exists
+        file_exists = os.path.isfile(LOG_FILE)  # checks if file already exists
         
-        with open(LOG_FILE, "a", newline="", encoding="utf-8") as csvfile:
-            # Include resolved_date in new entries
-            fieldnames = ["timestamp", "query_text", "answer_text", "answered", "chunks_found", "resolved_date"]
+        with open(LOG_FILE, "a", newline="", encoding="utf-8") as csvfile:  # opens file for adding logs
+            fieldnames = ["timestamp", "query_text", "answer_text", "answered", "chunks_found", "resolved_date"]  # columns for CSV
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
 
-            if not file_exists:
-                writer.writeheader()
+            if not file_exists:  # if file is new
+                writer.writeheader()  # adds column titles
 
-            writer.writerow({
-                "timestamp": datetime.now().isoformat(),
-                "query_text": clean_query.strip(),
-                "answer_text": clean_answer.strip()[:500],
-                "answered": answered_flag,
-                "chunks_found": chunks_found,
-                "resolved_date": ""  # Empty for new entries
+            writer.writerow({  # adds a new log row
+                "timestamp": datetime.now().isoformat(),  # date and time now
+                "query_text": clean_query.strip(),        # cleaned question
+                "answer_text": clean_answer.strip()[:500], # cleaned answer (shortened)
+                "answered": answered_flag,                # True or False if answered
+                "chunks_found": chunks_found,             # number of matching text parts found
+                "resolved_date": ""                       # empty for now, can be updated later
             })
             
-        print(f"✅ CSV log successful")
+        print(f"✅ CSV log successful")  # tells us it worked
     except Exception as csv_error:
-        print(f"❌ CSV logging error: {csv_error}")
+        print(f"❌ CSV logging error: {csv_error}")  # shows an error but keeps running
 
-    # ---- SQLite Logging ----
+    # ---- Database Logging ----
     try:
-        # Connect to SQLite memory database
-        conn = sqlite3.connect(MEMORY_DB)
-        cur = conn.cursor()
+        conn = sqlite3.connect(MEMORY_DB)  # opens local database
+        cur = conn.cursor()  # lets us run SQL commands
         
-        # Create queries table if it doesn’t exist yet
-        cur.execute(
+        cur.execute(  # creates table if not already there
             """
             CREATE TABLE IF NOT EXISTS queries (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,  -- unique row ID
-                timestamp TEXT,                        -- when the query was asked
-                query_text TEXT,                       -- sanitized query
-                answer_text TEXT,                      -- sanitized answer
-                answered INTEGER,                      -- 1 if answered, 0 otherwise
-                chunks_found INTEGER                   -- number of retrieved chunks
+                id INTEGER PRIMARY KEY AUTOINCREMENT,  -- unique number for each record
+                timestamp TEXT,                        -- when the question was asked
+                query_text TEXT,                       -- question text
+                answer_text TEXT,                      -- chatbot’s answer
+                answered INTEGER,                      -- 1 if answered, 0 if not
+                chunks_found INTEGER                   -- how many chunks were used
             )
             """
         )
 
-        # Insert a new row with query details (uses parameterized query to prevent SQL injection)
+        # adds a new record
         cur.execute(
             "INSERT INTO queries (timestamp, query_text, answer_text, answered, chunks_found) VALUES (?, ?, ?, ?, ?)",
             (
-                datetime.now().isoformat(),  # current timestamp
-                clean_query,                 # sanitized query
-                clean_answer,                # sanitized answer
-                int(answered_flag),          # convert boolean to integer
-                chunks_found                 # number of retrieved chunks
+                datetime.now().isoformat(),  # date and time
+                clean_query,                 # cleaned question
+                clean_answer,                # cleaned answer
+                int(answered_flag),          # turns True/False into 1/0
+                chunks_found                 # number of text chunks found
             )
         )
 
-        # Save changes to the database
-        conn.commit()
-        print(f"✅ SQLite log successful")  # confirmation message
+        conn.commit()  # saves the record
+        print(f"✅ SQLite log successful")  # success message
         
     except Exception as sqlite_error:
-        # Report SQLite logging errors but don't crash the app
-        print(f"❌ SQLite logging error: {sqlite_error}")
+        print(f"❌ SQLite logging error: {sqlite_error}")  # error message
     finally:
-        # Always try to close the database connection safely
         try:
-            conn.close()
+            conn.close()  # closes the database safely
         except:
-            pass
+            pass  # ignores close errors
+
 
 def load_embeddings_and_db():
-    """Load embeddings and database, create if doesn't exist"""
+    """Loads the AI’s memory (embeddings) and database. Creates new ones if missing."""
     try:
-        import os
-        
-        # Load embeddings model
+        # Loads a model that turns text into numbers so the AI can compare meanings
         embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
         print("✅ Embeddings model loaded")
         
-        db_path = "data/chroma_db"
+        db_path = "data/chroma_db"  # where the database will be stored
         
-        # Check if database exists
+        # Checks if a database already exists
         if os.path.exists(db_path) and os.listdir(db_path):
             print("📂 Loading existing Chroma database...")
-            db = Chroma(persist_directory=db_path, embedding_function=embeddings)
+            db = Chroma(persist_directory=db_path, embedding_function=embeddings)  # loads saved data
         else:
             print("🔨 Creating new Chroma database (first time)...")
             
-            # Make sure the handbook is loaded
+            # Makes sure the handbook text is already loaded
             if not HANDBOOK_TEXT:
                 print("❌ Cannot create database: Handbook not loaded")
-                return None, None, None
+                return None, None, None  # stops if no handbook text found
             
-            # Split text into chunks
+            # Breaks the handbook text into smaller parts
             from langchain.text_splitter import RecursiveCharacterTextSplitter
             text_splitter = RecursiveCharacterTextSplitter(
-                chunk_size=1000,
-                chunk_overlap=200
+                chunk_size=1000,  # each part has 1000 characters
+                chunk_overlap=200  # overlaps a little so no information is lost
             )
             chunks = text_splitter.split_text(HANDBOOK_TEXT)
-            print(f"📄 Split into {len(chunks)} chunks")
+            print(f"📄 Split into {len(chunks)} chunks")  # tells how many pieces were made
             
-            # Create database from chunks
+            # Creates a database from the text pieces
             db = Chroma.from_texts(
-                texts=chunks,
-                embedding=embeddings,
-                persist_directory=db_path
+                texts=chunks,             # list of handbook parts
+                embedding=embeddings,     # uses the embeddings model
+                persist_directory=db_path # saves it to a folder
             )
-            db.persist()
+            db.persist()  # makes sure it's saved on disk
             print("💾 Database created and saved")
         
-        # Create retriever
+        # Creates a retriever — lets the AI look up related handbook info when asked
         retriever = db.as_retriever(
             search_type="mmr", 
             search_kwargs={"k": 15, "fetch_k": 35, "lambda_mult": 0.5}
         )
         
-        print("✅ Database and retriever ready")
-        return embeddings, db, retriever
+        print("✅ Database and retriever ready")  # everything worked
+        return embeddings, db, retriever  # returns all ready-to-use parts
     
     except Exception as e:
-        print(f"💥 Database loading error: {e}")
+        print(f"💥 Database loading error: {e}")  # if something fails
         import traceback
-        traceback.print_exc()
-        return None, None, None
+        traceback.print_exc()  # shows detailed error info
+        return None, None, None  # returns nothing if there’s a problem
+
 
 def load_handbook():
-    """Load handbook text from PDF (simple extraction)"""
-    import os
+    """Reads the student handbook from the PDF file"""
     
+    # Show where the app is looking for the handbook
     print(f"📂 Looking for PDF at: {HANDBOOK_FILE}")
     print(f"📂 Current directory: {os.getcwd()}")
     print(f"📂 PDF exists? {os.path.exists(HANDBOOK_FILE)}")
     
+    # If the file doesn't exist, stop here
     if not os.path.exists(HANDBOOK_FILE):
         print(f"❌ PDF file not found!")
         return ""
     
     try:
+        # Try opening the PDF file
         print("📖 Attempting to open PDF...")
-        from PyPDF2 import PdfReader
+        from PyPDF2 import PdfReader  # library for reading PDF text
         
         reader = PdfReader(HANDBOOK_FILE)
         print(f"✅ PDF opened! Pages: {len(reader.pages)}")
         
+        # Go through each page and collect the text
         text = ""
         for i, page in enumerate(reader.pages):
             print(f"📄 Extracting page {i+1}/{len(reader.pages)}...")
             page_text = page.extract_text()
             text += page_text + "\n"
         
+        # Return all the text found
         print(f"✅ Extraction complete! Total characters: {len(text)}")
         return text.strip()
         
     except Exception as e:
+        # If something goes wrong, show what happened
         print(f"❌ Error reading handbook PDF: {e}")
         import traceback
         traceback.print_exc()
         return ""
+    
 
-# Register a startup event for FastAPI (runs automatically when the server starts)
+# Runs automatically when the server starts
 @app.on_event("startup")
 async def startup_event():
-    global HANDBOOK_TEXT, embeddings, db, retriever
-    
-    print("🚀 Server starting...")
-    
-    # Initialize as None so server can start
-    HANDBOOK_TEXT = ""
-    embeddings = None
-    db = None
-    retriever = None
-    
-    # Load everything in background WITHOUT BLOCKING
-    asyncio.create_task(delayed_initialization())
-    
-    print("✅ Server started! Initialization running in background...")
+    """Loads the handbook and database when the app starts"""
+    global HANDBOOK_TEXT, embeddings, db, retriever  # allows the function to change these global variables
 
-async def delayed_initialization():
-    """Run after server starts"""
-    global HANDBOOK_TEXT, embeddings, db, retriever
-    
-    # Wait 5 seconds for server to fully start
-    await asyncio.sleep(5)
-    
-    loop = asyncio.get_event_loop()
-    
+    print("🚀 Starting server...")  # simple startup message
+
+    loop = asyncio.get_event_loop()  # gets the event loop used for async tasks
+
     try:
-        print("📚 Loading handbook...")
+        # Load the handbook file in a separate thread
         HANDBOOK_TEXT = await loop.run_in_executor(executor, lambda: load_handbook())
-        print(f"✅ Handbook loaded: {len(HANDBOOK_TEXT)} characters")
+        print(f"✅ Handbook loaded: {len(HANDBOOK_TEXT)} characters")  # show success message
     except Exception as e:
-        HANDBOOK_TEXT = ""
-        print(f"❌ Error loading handbook: {e}")
-    
+        HANDBOOK_TEXT = ""  # set empty if failed
+        print(f"❌ Error loading handbook: {e}")  # show what went wrong
+
     try:
-        print("🧠 Loading embeddings and database (this may take 3-5 minutes)...")
+        # Load embeddings and database (done in background too)
         embeddings, db, retriever = await loop.run_in_executor(
             executor, lambda: load_embeddings_and_db()
         )
         
+        # Check if everything was loaded successfully
         if all([embeddings, db, retriever]):
-            print("🎉 All resources ready!")
+            print("🎉 Server ready!")  # everything loaded fine
         else:
-            print("❌ Resource initialization incomplete")
+            print("❌ Server initialization failed")  # one or more parts missing
     except Exception as e:
-        embeddings, db, retriever = None, None, None
-        print(f"❌ Error initializing embeddings/db: {e}")
-        import traceback
-        traceback.print_exc()
-
-async def initialize_resources():
-    """Load resources in background without blocking startup"""
-    global HANDBOOK_TEXT, embeddings, db, retriever
-    
-    loop = asyncio.get_event_loop()
-    
-    try:
-        print("📚 Loading handbook...")
-        HANDBOOK_TEXT = await loop.run_in_executor(executor, lambda: load_handbook())
-        print(f"✅ Handbook loaded: {len(HANDBOOK_TEXT)} characters")
-    except Exception as e:
-        HANDBOOK_TEXT = ""
-        print(f"❌ Error loading handbook: {e}")
-    
-    try:
-        print("🧠 Loading embeddings and database...")
-        embeddings, db, retriever = await loop.run_in_executor(
-            executor, lambda: load_embeddings_and_db()
-        )
-        
-        if all([embeddings, db, retriever]):
-            print("🎉 All resources ready!")
-        else:
-            print("❌ Resource initialization incomplete")
-    except Exception as e:
+        # If something breaks, clear the variables and show error
         embeddings, db, retriever = None, None, None
         print(f"❌ Error initializing embeddings/db: {e}")
 
-# Add these endpoints
+
 @app.get("/")
 async def root():
     return {"status": "Server is running!", "message": "Hello from Render"}
 
-@app.get("/initialize")
-async def initialize():
-    """Manually trigger initialization"""
-    try:
-        asyncio.create_task(initialize_resources())
-        return {"message": "Initialization started in background"}
-    except Exception as e:
-        return {"error": str(e)}
 
-@app.get("/status")
-async def status():
-    return {
-        "handbook_loaded": bool(HANDBOOK_TEXT),
-        "embeddings_ready": embeddings is not None,
-        "db_ready": db is not None,
-        "retriever_ready": retriever is not None
-    }
-
-# Define a GET endpoint at /report (used to fetch usage statistics)
+# This route shows a public report of chatbot performance
 @app.get("/report")
 def get_report():
-    """Public report endpoint with simplified answered/not answered breakdown"""
+    """Shows how many questions were answered or not, and lists frequent ones"""
     try:
+        # Try to open the log file where all queries are saved
         with open(LOG_FILE, "r", encoding="utf-8") as f:
-            reader = list(csv.DictReader(f))
+            reader = list(csv.DictReader(f))  # read the file as a list of dictionaries
     except FileNotFoundError:
+        # If the log file doesn't exist yet, return empty results
         return {
             "total_queries": 0,
             "answered_queries": 0,
@@ -831,6 +795,7 @@ def get_report():
             "most_frequent_questions": []
         }
 
+    # If the log exists but is empty
     if not reader:
         return {
             "total_queries": 0,
@@ -839,19 +804,24 @@ def get_report():
             "most_frequent_questions": []
         }
 
-    total = len(reader)
+    total = len(reader)  # total number of questions in the log
     
-    # Simple answered/not answered based on CSV field
-    answered = sum(1 for r in reader if (r.get("answered") or "").strip().lower() in ["true", "1", "yes"])
-    not_answered = total - answered
+    # Count how many were answered
+    answered = sum(
+        1 for r in reader 
+        if (r.get("answered") or "").strip().lower() in ["true", "1", "yes"]
+    )
 
-    # Count most frequent questions
+    not_answered = total - answered  # remaining ones were not answered
+
+    # Count which questions appeared most often
     query_counter = Counter(
         (r.get("query_text") or "").strip().lower()
         for r in reader if r.get("query_text")
     )
-    top_faqs = query_counter.most_common(10)
+    top_faqs = query_counter.most_common(10)  # get top 10 repeated questions
 
+    # Return everything in an easy-to-read format
     return {
         "total_queries": total,
         "answered_queries": answered,
@@ -862,85 +832,107 @@ def get_report():
         ]
     }
 
+
+# This function runs the main chat pipeline and tracks it in LangSmith
 @traceable(name="chat_pipeline")
 async def run_chat_pipeline(clean_query: str, clean_context: str, clean_prompt: str, executor, model):
-    """Run Gemini with LangSmith tracing enabled"""
-    
+    """Run the LLM model with LangSmith tracing enabled"""
+
+    # Run Gemini model asynchronously in a background thread
     response = await asyncio.get_event_loop().run_in_executor(
         executor, model.generate_content, clean_prompt
     )
-    
-    # After the traced execution, query for the most recent run
+
     run_id = None
     try:
-        # Wait a moment for trace to be created
+        # Wait briefly to allow LangSmith to record the trace
         await asyncio.sleep(0.1)
-        
-        # Query LangSmith for recent runs
+
+        # Get the latest recorded LangSmith run for this project
         recent_runs = list(client.list_runs(
             project_name=os.getenv("LANGCHAIN_PROJECT", "student-handbook-backend"),
-            limit=1,
-            execution_order=1  # Get most recent
+            limit=1,              # Only get one (the latest)
+            execution_order=1     # Get most recent run
         ))
-        
+
+        # If there’s a trace available, store its ID
         if recent_runs:
             run_id = str(recent_runs[0].id)
             print(f"✅ Found recent trace_id: {run_id}")
     except Exception as e:
         print(f"⚠️ Could not query recent runs: {e}")
-    
+
+    # Return both the model’s text output and its LangSmith trace ID
     return response.text if hasattr(response, "text") else str(response), run_id
 
+
+# This function handles the retrieval process with LangSmith tracing
 @traceable(name="retrieval_step")
 async def traced_retrieval(query, retriever, handbook_text):
-    """Retrieve handbook chunks for LangSmith tracing (safe for string outputs)"""
+    """Retrieve handbook chunks for LangSmith tracing"""
+    
+    # Use custom retrieval function to get relevant text parts
     docs = await smart_retrieval(query, retriever, handbook_text)
 
-    # If smart_retrieval already returns strings
+    # Format retrieved results as a list of chunks with metadata
     results = []
     for chunk in docs:
         results.append({
-            "content": chunk,   # the text chunk
-            "metadata": {}      # no metadata available
+            "content": chunk,   # the actual text
+            "metadata": {}      # no metadata attached
         })
     return results
 
+
+# This function builds the context before sending it to the LLM
 @traceable(name="context_builder")
 def traced_context(docs, query, session_id):
     """Build context with LangSmith tracing"""
+    
+    # Extract just the text from retrieved docs
     text_chunks = [doc["content"] for doc in docs]
+    
+    # Combine memory + retrieved text + new query into a final context
     return build_context_with_memory(text_chunks, query, session_id)
+
 
 @app.post("/chat")
 async def chat(request: Request):
-    """Main chat endpoint with memory and timeout handling"""
+    """Main chat endpoint that handles student questions"""
     global retriever, HANDBOOK_TEXT, model
     start_time = time.time()
     
     try:
+        # Check if the AI model is set up
         if not model:
             return {"answer": "Gemini API is not configured."}
         
+        # Get the student’s message and session info
         data = await request.json()
         query = data.get("query", "").strip()
         session_id = data.get("session_id", "default_session")
         
+        # Return a message if no question was provided
         if not query:
             return {"answer": "Please ask a question."}
         
+        # Make sure a chat session exists (for memory)
         memory.get_or_create_session(session_id)
-        print(f"🔍 Processing focused query: {query} [Session: {session_id}]")
+        print(f"🔍 Processing query: {query} [Session: {session_id}]")
         
+        # Timeout protection
         if time.time() - start_time > 18:
             return {"answer": "Please check your internet connection and try again."}
         
-        # ---- Retrieval (traced) ----
+        # Step 1: Find related handbook sections
         docs = await traced_retrieval(query, retriever, HANDBOOK_TEXT)
         chunks_found = len(docs)
         
+        # Timeout check again
         if time.time() - start_time > 18:
             return {"answer": "Please check your internet connection and try again."}
         
+        # If no related text found in handbook
         if not docs:
             no_answer_msg = "I couldn't find relevant information in the handbook for your question."
             memory.add_conversation(session_id, query, no_answer_msg)
@@ -949,13 +941,12 @@ async def chat(request: Request):
             )
             return {"answer": no_answer_msg}
         
-        # ---- Context (traced) ----
+        # Step 2: Build the context for the model
         context = traced_context(docs, query, session_id)
-
         clean_context = sanitize_text(context)
         clean_query = sanitize_text(query)
         
-        # Build final prompt
+        # Step 3: Create the model’s prompt
         prompt_parts = [
             "You are a GSU student handbook assistant. Provide a focused, direct answer to the student's question.",
             "",
@@ -977,29 +968,29 @@ async def chat(request: Request):
         if len(clean_prompt) > 30000:
             clean_prompt = clean_prompt[:30000] + "..."
         
-        response_text, run_id = await run_chat_pipeline(clean_query, clean_context, clean_prompt, executor, model)
+        # Step 4: Run the model and track it with LangSmith
+        response_text, run_id = await run_chat_pipeline(
+            clean_query, clean_context, clean_prompt, executor, model
+        )
 
-        # Store the run_id for this session
+        # Store trace ID for this chat session
         if run_id:
             last_run_ids[session_id] = run_id
             print(f"🔗 Stored run_id {run_id} for session {session_id}")
         
-        # Process response
+        # Step 5: Clean and finalize the model’s answer
         raw_answer = response_text
         answer = sanitize_text(raw_answer)
         if not answer:
             answer = "I couldn't generate a proper response. Please try rephrasing your question."
-        print(f"DEBUG - Answer processed successfully, length: {len(answer)}")
+        print(f"✅ Answer generated successfully ({len(answer)} characters)")
         
-        # Save conversation in memory
+        # Save question and answer to memory
         memory.add_conversation(session_id, query, answer, clean_context[:200])
-        print(f"✅ Response generated: {len(answer)} characters")
         
-        # Answered flag
+        # Step 6: Check if the response was complete or unclear
         answered = True
-        if not answer.strip():
-            answered = False
-        elif any(phrase in answer.lower() for phrase in [
+        unclear_phrases = [
             "does not specify","not specified","doesn't specify","not mentioned",
             "not provided","doesn't mention","no information","not available",
             "not found","not included","doesn't include","not detailed",
@@ -1008,21 +999,25 @@ async def chat(request: Request):
             "no specific","not specifically","doesn't provide specific",
             "is not available","are not available","not accessible",
             "couldn't find","error","technical difficulties","try again"
-        ]):
+        ]
+        if not answer.strip() or any(p in answer.lower() for p in unclear_phrases):
             answered = False
         
-        # Log query + answer
+        # Step 7: Log everything (query, answer, etc.)
         await asyncio.get_event_loop().run_in_executor(
             executor, log_query, query, answer, answered, chunks_found
         )
         
+        # Return the final response
         return {"answer": answer, "session_id": session_id}
     
     except Exception as e:
+        # Handles any unexpected system error
         print(f"❌ Unexpected error: {repr(e)}")
         error_msg = "Please check your internet connection and try again." if time.time() - start_time > 20 \
             else "I encountered an unexpected error. Please try again or contact support."
         
+        # Try saving this failed attempt in the log
         try:
             session_id = data.get("session_id", "default_session")
             query = data.get("query", "")
@@ -1035,59 +1030,63 @@ async def chat(request: Request):
         
         return {"answer": error_msg}
 
+
 @app.post("/feedback")
 async def submit_feedback(feedback: FeedbackSubmission):
-    """Submit user feedback + send to LangSmith"""
+    """Handles feedback from users"""
     try:
-        # Ensure data directory exists
+        # make sure the “data” folder exists
         os.makedirs("data", exist_ok=True)
         
-        # Check if feedback file exists
+        # check if feedback.csv already exists
         file_exists = os.path.isfile(FEEDBACK_FILE)
         
+        # open the CSV file and prepare to add feedback
         with open(FEEDBACK_FILE, "a", newline="", encoding="utf-8") as csvfile:
             fieldnames = ["timestamp", "feedback_text", "rating", "user_type", "session_id"]
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
 
+            # write column names if file is new
             if not file_exists:
                 writer.writeheader()
 
+            # add new feedback entry
             writer.writerow({
-                "timestamp": datetime.now().isoformat(),
-                "feedback_text": sanitize_text(feedback.feedback_text),
-                "rating": feedback.rating,
-                "user_type": feedback.user_type,
-                "session_id": feedback.session_id
+                "timestamp": datetime.now().isoformat(),             # current date and time
+                "feedback_text": sanitize_text(feedback.feedback_text), # cleaned feedback text
+                "rating": feedback.rating,                           # user’s rating (1–5)
+                "user_type": feedback.user_type,                     # who gave it (student, admin, etc.)
+                "session_id": feedback.session_id                    # which chat session it came from
             })
         
-        # ---- Send to LangSmith as a custom event ----
+        # also try sending feedback to LangSmith (for monitoring)
         try:
-            # Log feedback as a custom event/annotation
             feedback_data = {
-                "feedback_text": sanitize_text(feedback.feedback_text),
+                "feedback_text": sanitize_text(feedback.feedback_text), # cleaned text again
                 "rating": feedback.rating,
-                "normalized_score": feedback.rating / 5.0,
+                "normalized_score": feedback.rating / 5.0,              # turns score into 0–1 scale
                 "user_type": feedback.user_type,
                 "session_id": feedback.session_id,
                 "timestamp": datetime.now().isoformat()
             }
             
-            # Use LangSmith's logging to track feedback
+            # simple helper to record feedback activity
             from langsmith import traceable
-            
             @traceable(name="user_feedback_submission")
             def log_feedback_event(data):
                 return {"status": "feedback_logged", "data": data}
             
-            log_feedback_event(feedback_data)
+            log_feedback_event(feedback_data)  # send feedback data to LangSmith
             print(f"✅ Feedback logged to LangSmith: {feedback.rating}/5 stars")
             
         except Exception as ls_err:
+            # if feedback can’t be sent online, just show a warning
             print(f"⚠️ Could not send feedback to LangSmith: {ls_err}")
         
-        print(f"✅ Feedback submitted locally: {feedback.rating}/5 stars")
+        print(f"✅ Feedback saved locally: {feedback.rating}/5 stars")
         return {"message": "Feedback submitted successfully", "status": "success"}
     
     except Exception as e:
+        # show error if saving feedback fails
         print(f"❌ Error saving feedback: {e}")
         return {"message": "Error submitting feedback", "status": "error"}
