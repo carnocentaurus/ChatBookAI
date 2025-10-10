@@ -10,7 +10,6 @@ class FaqPage extends StatefulWidget { // a screen that can update itself
 
   @override
   State<FaqPage> createState() => _FaqPageState(); // connects logic part
-  // ❌ Remove → the page won’t know what state (logic) to use
 }
 
 class _FaqPageState extends State<FaqPage> { // this handles the logic of FAQ page
@@ -22,7 +21,6 @@ class _FaqPageState extends State<FaqPage> { // this handles the logic of FAQ pa
   void initState() { // runs automatically when the page opens
     super.initState();
     _fetchReport(); // gets FAQ data from the backend
-    // ❌ Remove → page will never load FAQ data
   }
 
   // fetch data from backend
@@ -44,7 +42,6 @@ class _FaqPageState extends State<FaqPage> { // this handles the logic of FAQ pa
         _loading = false; // stop spinner
       });
     }
-    // ❌ Remove try/catch → app crashes if there’s no internet
   }
 
   @override
@@ -86,7 +83,6 @@ class _FaqPageState extends State<FaqPage> { // this handles the logic of FAQ pa
         ),
       ],
     );
-    // ❌ Remove Expanded → layout may overflow the screen
   }
 
   // ---------- BUILDS LIST OF FAQ CARDS ----------
@@ -113,7 +109,6 @@ class _FaqPageState extends State<FaqPage> { // this handles the logic of FAQ pa
           ),
         ),
       ];
-      // ❌ Remove → app will show nothing when no FAQs exist
     }
 
     // builds each FAQ card with a number (rank)
@@ -198,7 +193,6 @@ class _FaqPageState extends State<FaqPage> { // this handles the logic of FAQ pa
               ),
             );
           }
-          // ❌ Remove onTap → tapping FAQ won’t send question to chatbot
         },
       ),
     );
