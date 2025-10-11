@@ -1,159 +1,163 @@
 # admin.py
 
-from fastapi import HTTPException, Depends, Form, Request, UploadFile, File
-from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
-import secrets
-import os
-import csv
-import sqlite3
-import shutil
-from datetime import datetime
-from collections import Counter
-from urllib.parse import quote, unquote
+from fastapi import HTTPException, Depends, Form, Request, UploadFile, File  # lets the app handle forms, files, and web requests
+from fastapi.responses import HTMLResponse, RedirectResponse  # shows web pages or moves the user to another page
+from fastapi.security import HTTPBasic, HTTPBasicCredentials  # checks username and password for admin login
+import secrets  # keeps passwords and keys safe
+import os  # works with folders and files
+import csv  # reads and saves feedback data
+import sqlite3  # connects to the local database
+import shutil  # copies or replaces files
+from datetime import datetime  # records the date and time of actions
+from collections import Counter  # counts how many times something appears
+from urllib.parse import quote, unquote  # cleans or restores text used in web links
 
 # Security setup
-security = HTTPBasic()
-ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "gsu2025")
+security = HTTPBasic()  # sets up basic login checking
+ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")  # gets the admin name or uses "admin" if none is set
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "gsu2025")  # gets the admin password or uses "gsu2025" if none is set
 
-# Function to verify provided admin credentials
+
+# Function to check if the admin login details are correct
 def verify_admin(credentials: HTTPBasicCredentials = Depends(security)):
-    is_correct_username = secrets.compare_digest(credentials.username, ADMIN_USERNAME)
-    is_correct_password = secrets.compare_digest(credentials.password, ADMIN_PASSWORD)
+    is_correct_username = secrets.compare_digest(credentials.username, ADMIN_USERNAME)  # checks if the name matches
+    is_correct_password = secrets.compare_digest(credentials.password, ADMIN_PASSWORD)  # checks if the password matches
     
-    if not (is_correct_username and is_correct_password):
-        raise HTTPException(
+    if not (is_correct_username and is_correct_password):  # if either is wrong
+        raise HTTPException(  # stop the request and show an error message
             status_code=401,
             detail="Invalid admin credentials",
             headers={"WWW-Authenticate": "Basic"},
         )
     
-    return credentials.username
+    return credentials.username  # if correct, allow access and return the name
+
 
 # Attach all admin-related routes to the FastAPI app
 def setup_admin_routes(app, memory, LOG_FILE, MEMORY_DB):
-    @app.get("/admin", response_class=HTMLResponse)
-    async def admin_dashboard(credentials: HTTPBasicCredentials = Depends(verify_admin)):
-        # Admin dashboard view (requires authentication)
+    @app.get("/admin", response_class=HTMLResponse)   # When someone visits /admin, show the admin dashboard as a web page
+    async def admin_dashboard(credentials: HTTPBasicCredentials = Depends(verify_admin)):  # Only allow access if the admin logs in
 
-        total_custom_info = len(memory.custom_info)
+        total_custom_info = len(memory.custom_info)   # Count how many custom items are saved in memory
 
-        # Load log data for statistics
+        # Try to read the activity log for statistics
         try:
-            with open(LOG_FILE, "r", encoding="utf-8") as f:
-                reader = list(csv.DictReader(f))
+            with open(LOG_FILE, "r", encoding="utf-8") as f:   # Open the log file
+                reader = list(csv.DictReader(f)) # Read its content as a list of rows
 
-            total_queries = len(reader)
-            
-            # Simple count based on CSV answered field
+            total_queries = len(reader) # Count all recorded user questions
+        
+            # Count how many were answered or not
             answered_count = sum(1 for r in reader if (r.get("answered") or "").strip().lower() in ["true", "1", "yes"])
-            not_answered_count = total_queries - answered_count
-            accuracy_rate = (answered_count / total_queries * 100) if total_queries > 0 else 0
-            
-            recent_queries = list(reversed(reader[-10:])) if reader else []
-        except FileNotFoundError:
-            total_queries = 0
+            not_answered_count = total_queries - answered_count  # The rest are unanswered
+            accuracy_rate = (answered_count / total_queries * 100) if total_queries > 0 else 0  # Get percentage of answered ones
+        
+            recent_queries = list(reversed(reader[-10:])) if reader else []  # Show the 10 most recent entries
+        except FileNotFoundError: # If the log file doesn’t exist
+            total_queries = 0 # Use default values
             answered_count = 0
             not_answered_count = 0
             accuracy_rate = 0
             recent_queries = []
 
-        # Get database counts
-        conn = sqlite3.connect(MEMORY_DB)
-        cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM conversations")
+        # Open the database to count stored records
+        conn = sqlite3.connect(MEMORY_DB) # Connect to the database
+        cursor = conn.cursor() # Create a cursor for queries
+        cursor.execute("SELECT COUNT(*) FROM conversations") # Count all conversations
         total_conversations = cursor.fetchone()[0]
-        cursor.execute("SELECT COUNT(*) FROM sessions")
+        cursor.execute("SELECT COUNT(*) FROM sessions") # Count all sessions
         total_sessions = cursor.fetchone()[0]
-        conn.close()
+        conn.close()  # Close the database connection
 
-        # Render dashboard HTML
+        # Show all the gathered info in a web dashboard
         return HTMLResponse(content=get_updated_dashboard_html(
             total_queries, answered_count, not_answered_count, accuracy_rate,
             total_conversations, total_sessions, total_custom_info, recent_queries
         ))
 
-    @app.get("/admin/custom-info", response_class=HTMLResponse)
-    async def admin_custom_info(credentials: HTTPBasicCredentials = Depends(verify_admin)):
-        # Admin page for managing custom information
-        return HTMLResponse(content=get_custom_info_html(memory.custom_info))
 
-    @app.get("/admin/custom-info/add", response_class=HTMLResponse)
+    @app.get("/admin/custom-info", response_class=HTMLResponse)  # When admin visits this page, show all custom info
+    async def admin_custom_info(credentials: HTTPBasicCredentials = Depends(verify_admin)):  # Make sure admin is logged in
+        # Admin page for viewing and managing saved info
+        return HTMLResponse(content=get_custom_info_html(memory.custom_info))  # Show the page with all current info
+
+    @app.get("/admin/custom-info/add", response_class=HTMLResponse)  # Page for adding new custom info
     async def admin_add_info_form(
-        credentials: HTTPBasicCredentials = Depends(verify_admin),
-        prefill_topic: str = None
+        credentials: HTTPBasicCredentials = Depends(verify_admin),  # Check admin login
+        prefill_topic: str = None # Optional topic to fill in automatically
     ):
-        # Form to add custom info, optionally pre-filling a topic
-        prefilled_topic = unquote(prefill_topic) if prefill_topic else ""
-        return HTMLResponse(content=get_add_custom_info_form_html(prefilled_topic))
+        # Show the form to add new info
+        prefilled_topic = unquote(prefill_topic) if prefill_topic else ""  # If there’s a topic, show it in the form
+        return HTMLResponse(content=get_add_custom_info_form_html(prefilled_topic))  # Display the form page
 
-    @app.post("/admin/custom-info/add")
+    @app.post("/admin/custom-info/add")  # When admin submits the form, this handles it
     async def admin_add_info(
-        credentials: HTTPBasicCredentials = Depends(verify_admin),
-        topic: str = Form(...),
-        information: str = Form(...),
+        credentials: HTTPBasicCredentials = Depends(verify_admin),  # Check admin login
+        topic: str = Form(...), # Get topic text from the form
+        information: str = Form(...), # Get information text from the form
     ):
-        # Handle submission of new custom info
-        memory.add_custom_info(topic, information)
-        return RedirectResponse(url="/admin/custom-info", status_code=303)
-    
-    @app.get("/admin/upload-handbook", response_class=HTMLResponse)
-    async def admin_upload_handbook_form(credentials: HTTPBasicCredentials = Depends(verify_admin)):
-        handbook_path = "data/handbook.pdf"
-        handbook_info = ""
-        if os.path.exists(handbook_path):
-            file_size = os.path.getsize(handbook_path)
-            file_size_mb = file_size / (1024 * 1024)
-            modified_time = datetime.fromtimestamp(os.path.getmtime(handbook_path))
-            handbook_info = f"Current handbook: {file_size_mb:.2f} MB, last updated {modified_time.strftime('%Y-%m-%d %H:%M:%S')}"
-        else:
-            handbook_info = "No handbook currently uploaded"
-    
-        return HTMLResponse(content=get_upload_handbook_html(handbook_info))
+        # Add the new custom info to memory
+        memory.add_custom_info(topic, information) # Save the topic and info
+        return RedirectResponse(url="/admin/custom-info", status_code=303)  # Go back to the list after adding
 
-    @app.post("/admin/upload-handbook")
+    
+    @app.get("/admin/upload-handbook", response_class=HTMLResponse)  # When admin visits the upload page
+    async def admin_upload_handbook_form(credentials: HTTPBasicCredentials = Depends(verify_admin)):  # Check admin login
+        handbook_path = "data/handbook.pdf"  # Location where the handbook is saved
+        handbook_info = ""  # Info to show about the current handbook
+    
+        if os.path.exists(handbook_path):  # If a handbook file already exists
+            file_size = os.path.getsize(handbook_path)  # Get how big the file is
+            file_size_mb = file_size / (1024 * 1024)  # Convert size to MB
+            modified_time = datetime.fromtimestamp(os.path.getmtime(handbook_path))  # Get last updated time
+            handbook_info = f"Current handbook: {file_size_mb:.2f} MB, last updated {modified_time.strftime('%Y-%m-%d %H:%M:%S')}"  # Show file info
+        else:
+            handbook_info = "No handbook currently uploaded"  # Message if no file found
+
+        return HTMLResponse(content=get_upload_handbook_html(handbook_info))  # Show upload page with handbook info
+
+    @app.post("/admin/upload-handbook")  # When admin uploads a new handbook
     async def admin_upload_handbook(
-        credentials: HTTPBasicCredentials = Depends(verify_admin),
-        file: UploadFile = File(...)
+        credentials: HTTPBasicCredentials = Depends(verify_admin),  # Check admin login
+        file: UploadFile = File(...)  # Get the uploaded file
     ):
         try:
-            if not file.filename.lower().endswith('.pdf'):
-                raise HTTPException(status_code=400, detail="Only PDF files are allowed")
-        
-            os.makedirs("data", exist_ok=True)
-        
-            handbook_path = "data/handbook.pdf"
-            temp_path = "data/handbook_temp.pdf"
-            backup_path = "data/handbook_backup.pdf"
-        
-            if os.path.exists(handbook_path):
-                shutil.copy2(handbook_path, backup_path)
-        
-            with open(temp_path, "wb") as buffer:
+            if not file.filename.lower().endswith('.pdf'):  # Check if the file is a PDF
+                raise HTTPException(status_code=400, detail="Only PDF files are allowed")  # Stop if not a PDF
+
+            os.makedirs("data", exist_ok=True)  # Make sure the folder exists
+
+            handbook_path = "data/handbook.pdf"  # Main handbook file
+            temp_path = "data/handbook_temp.pdf"  # Temporary file while uploading
+            backup_path = "data/handbook_backup.pdf"  # Backup of the old file
+
+            if os.path.exists(handbook_path):  # If there’s already a handbook
+                shutil.copy2(handbook_path, backup_path)  # Make a backup before replacing
+
+            with open(temp_path, "wb") as buffer:  # Save uploaded file temporarily
                 shutil.copyfileobj(file.file, buffer)
-        
-            if os.path.getsize(temp_path) == 0:
-                os.remove(temp_path)
-                raise HTTPException(status_code=400, detail="Uploaded file is empty")
-        
-            shutil.move(temp_path, handbook_path)
-        
-            if os.path.exists(backup_path):
-                os.remove(backup_path)
-        
-            return RedirectResponse(url="/admin/custom-info?upload=success", status_code=303)
-        
+
+            if os.path.getsize(temp_path) == 0:  # If uploaded file is empty
+                os.remove(temp_path)  # Delete it
+                raise HTTPException(status_code=400, detail="Uploaded file is empty")  # Show error
+
+            shutil.move(temp_path, handbook_path)  # Replace the old handbook with the new one
+
+            if os.path.exists(backup_path):  # If backup exists
+                os.remove(backup_path)  # Delete it since upload succeeded
+
+            return RedirectResponse(url="/admin/custom-info?upload=success", status_code=303)  # Go back to info page after upload
+
         except HTTPException:
-            raise
-        except Exception as e:
-            if os.path.exists(backup_path) and not os.path.exists(handbook_path):
-                shutil.move(backup_path, handbook_path)
-        
-            if os.path.exists(temp_path):
+            raise  # Rethrow expected errors
+        except Exception as e:  # If something goes wrong
+            if os.path.exists(backup_path) and not os.path.exists(handbook_path):  # If upload failed
+                shutil.move(backup_path, handbook_path)  # Restore old handbook
+
+            if os.path.exists(temp_path):  # Clean up temp file
                 os.remove(temp_path)
-        
-            raise HTTPException(status_code=500, detail=f"Error uploading handbook: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error uploading handbook: {str(e)}")  # Show error message
+
 
     @app.get("/admin/custom-info/delete/{info_id}")
     async def admin_delete_info(
@@ -165,174 +169,204 @@ def setup_admin_routes(app, memory, LOG_FILE, MEMORY_DB):
             del memory.custom_info[info_id]
             memory.save_custom_info()
         return RedirectResponse(url="/admin/custom-info", status_code=303)
+    
 
-    @app.get("/admin/faq", response_class=HTMLResponse)
-    async def admin_faq(credentials: HTTPBasicCredentials = Depends(verify_admin)):
-        # Full FAQ page with all frequently asked questions
+    @app.get("/admin/faq", response_class=HTMLResponse)  # When admin opens the FAQ page
+    async def admin_faq(credentials: HTTPBasicCredentials = Depends(verify_admin)):  # Check admin login
+        # Shows a full list of frequently asked questions from user logs
 
         try:
-            with open(LOG_FILE, "r", encoding="utf-8") as f:
-                reader = list(csv.DictReader(f))
+            with open(LOG_FILE, "r", encoding="utf-8") as f:  # Open the saved question logs
+                reader = list(csv.DictReader(f))  # Read all log entries as a list
 
-            # Count frequency of ALL questions
+            # Count how many times each question was asked
             query_counter = Counter(
                 (r.get("query_text") or "").strip().lower() for r in reader if r.get("query_text")
             )
-        
-            # Get questions asked at least twice, sorted by frequency
+    
+            # Keep only questions asked two or more times, sorted by how often they were asked
             frequent_questions = [(q, count) for q, count in query_counter.most_common() if count >= 2]
 
-            # Build FAQ data for each frequent question
-            faq_list = []
-            for question, count in frequent_questions:
-                # Get all log entries for this exact question
+            faq_list = []  # This will store all FAQ data
+
+            for question, count in frequent_questions:  # Go through each popular question
+                # Find all log entries that match this question
                 question_entries = [r for r in reader if (r.get("query_text") or "").strip().lower() == question]
-            
-                # Count successful answers
+        
+                # Count how many of these were answered
                 answered_count = 0
                 for entry in question_entries:
                     answered_field = (entry.get("answered") or "").strip().lower()
-                    if answered_field in ["true", "1", "yes"]:
+                    if answered_field in ["true", "1", "yes"]:  # Check if marked as answered
                         answered_count += 1
 
+                # Find the percent of times the question was successfully answered
                 success_rate = (answered_count / count * 100) if count > 0 else 0
 
+                # Save the question details in a list
                 faq_data = {
                     "question": question,
                     "total_asked": count,
                     "answered_count": answered_count,
                     "success_rate": success_rate
                 }
-                faq_list.append(faq_data)
+                faq_list.append(faq_data)  # Add to the FAQ list
 
         except FileNotFoundError:
-            faq_list = []
+            faq_list = []  # If the log file doesn’t exist yet, show an empty FAQ list
 
-        return HTMLResponse(content=get_full_faq_html(faq_list))
+        return HTMLResponse(content=get_full_faq_html(faq_list))  # Show the FAQ page with all the questions
+
     
-    @app.get("/admin/manage-queries", response_class=HTMLResponse)
-    async def admin_manage_queries(credentials: HTTPBasicCredentials = Depends(verify_admin)):
-        """Manage Queries page - shows unresolved queries"""
+    @app.get("/admin/manage-queries", response_class=HTMLResponse)  # Page for viewing unanswered questions
+    async def admin_manage_queries(credentials: HTTPBasicCredentials = Depends(verify_admin)):  # Only admin can open this page
+        """Shows questions that have not been answered or resolved yet"""
 
         try:
-            with open(LOG_FILE, "r", encoding="utf-8") as f:
-                reader = list(csv.DictReader(f))
+            with open(LOG_FILE, "r", encoding="utf-8") as f:  # Open the log file that stores all user questions
+                reader = list(csv.DictReader(f))  # Read all entries from the log
 
-            # Get not-answered queries that aren't resolved
-            not_answered_queries = []
-            for record in reader:
-                answered_field = (record.get("answered") or "").strip().lower()
-                query_text = (record.get("query_text") or "").strip()
-                resolved_date = (record.get("resolved_date") or "").strip()
-            
-                # Include if: not answered, not resolved, and has query text
+            not_answered_queries = []  # This will store questions that still need answers
+
+            for record in reader:  # Go through each question record
+                answered_field = (record.get("answered") or "").strip().lower()  # Check if marked as answered
+                query_text = (record.get("query_text") or "").strip()  # Get the question text
+                resolved_date = (record.get("resolved_date") or "").strip()  # Check if marked as resolved
+        
+                # Add to list only if it’s not answered, not resolved, and not empty
                 if (answered_field not in ["true", "1", "yes"] and 
                     query_text and 
                     not resolved_date):
                     not_answered_queries.append(record)
-        
-            # Count frequency
+
+            # Count how many times each unanswered question appears
             not_answered_counter = Counter()
             for query in not_answered_queries:
                 query_text = (query.get("query_text") or "").strip().lower()
                 if query_text:
-                    not_answered_counter[query_text] += 1
-        
-            all_needing_attention = not_answered_counter.most_common()
-        
-        except FileNotFoundError:
-            all_needing_attention = []
-        except Exception as e:
-            print(f"Error in manage queries: {e}")
-            all_needing_attention = []
+                    not_answered_counter[query_text] += 1  # Add count for this question
 
+            # Sort questions by how often they appear
+            all_needing_attention = not_answered_counter.most_common()
+
+        except FileNotFoundError:
+            all_needing_attention = []  # If no log file exists yet, show nothing
+        except Exception as e:
+            print(f"Error in manage queries: {e}")  # Print any problem found
+            all_needing_attention = []  # Show an empty list if something goes wrong
+
+        # Show the Manage Queries page with all questions that still need answers
         return HTMLResponse(content=get_manage_queries_with_resolved_html(all_needing_attention))
     
-    @app.get("/admin/feedback", response_class=HTMLResponse)
-    async def admin_feedback(credentials: HTTPBasicCredentials = Depends(verify_admin)):
-        """Admin page to view user feedback"""
     
+    @app.get("/admin/feedback", response_class=HTMLResponse)  # Page to view user feedback
+    async def admin_feedback(credentials: HTTPBasicCredentials = Depends(verify_admin)):  # Only admin can access
+        """Admin page to view user feedback"""
+
         try:
-            with open("data/feedback.csv", "r", encoding="utf-8") as f:
-                reader = list(csv.DictReader(f))
-        
-            # Sort by timestamp (newest first)
+            with open("data/feedback.csv", "r", encoding="utf-8") as f:  # Open the feedback file
+                reader = list(csv.DictReader(f))  # Read all feedback entries
+
+            # Sort feedback from newest to oldest
             feedback_list = sorted(reader, key=lambda x: x.get('timestamp', ''), reverse=True)
-        
-            # Calculate stats
+
+            # Count how many feedback entries exist
             total_feedback = len(feedback_list)
-            if total_feedback > 0:
+
+            if total_feedback > 0:  # If there is at least one feedback entry
+                # Collect all rating numbers from feedback
                 ratings = [int(f.get('rating', 0)) for f in feedback_list if f.get('rating', '').isdigit()]
+            
+                # Compute the average rating (total divided by number of ratings)
                 avg_rating = sum(ratings) / len(ratings) if ratings else 0
+            
+                # Count how many people gave each rating (e.g., how many 5s, 4s, etc.)
                 rating_distribution = Counter(ratings)
             else:
+                # If no feedback yet, set everything to zero
                 avg_rating = 0
                 rating_distribution = Counter()
-            
+
         except FileNotFoundError:
+            # If the feedback file doesn’t exist yet, just show an empty list
             feedback_list = []
             total_feedback = 0
             avg_rating = 0
             rating_distribution = Counter()
-    
+
+        # Show the feedback page with all details (list, total, average, rating counts)
         return HTMLResponse(content=get_feedback_html(feedback_list, total_feedback, avg_rating, rating_distribution))
+
     
-    @app.post("/admin/mark-resolved")
+    @app.post("/admin/mark-resolved")  # When the admin marks a question as resolved
     async def mark_query_resolved(
         request: Request,
-        credentials: HTTPBasicCredentials = Depends(verify_admin),
-        question: str = Form(...)
+        credentials: HTTPBasicCredentials = Depends(verify_admin),  # Only admin can do this
+        question: str = Form(...)  # The question to mark as resolved
     ):
         """Mark all instances of a question as resolved by updating CSV"""
         try:
-            # Read current CSV
+            # Open the log file where all chatbot questions are saved
             with open(LOG_FILE, "r", encoding="utf-8") as f:
-                reader = list(csv.DictReader(f))
-        
-            # Add resolved_date column if it doesn't exist
+                reader = list(csv.DictReader(f))  # Read all the records
+
+            # Make sure there’s a column for “resolved_date”
             fieldnames = reader[0].keys() if reader else []
             if 'resolved_date' not in fieldnames:
                 fieldnames = list(fieldnames) + ['resolved_date']
-        
-            # Update all instances of this question
+
+            # Get today’s date to mark the question as resolved
             today = datetime.now().strftime("%Y-%m-%d")
-            updated_count = 0
-        
+            updated_count = 0  # Counter for how many records were updated
+
+            # Go through every record in the file
             for record in reader:
+                # Check if this record matches the question entered
                 if record.get("query_text", "").strip().lower() == question.lower():
-                    if not record.get("resolved_date", "").strip():  # Only update if not already resolved
+                    # If not yet resolved, mark it with today’s date
+                    if not record.get("resolved_date", "").strip():
                         record["resolved_date"] = today
                         updated_count += 1
-                    elif "resolved_date" not in record:  # Handle old CSV format
+                    # Handle older files that don’t have this column yet
+                    elif "resolved_date" not in record:
                         record["resolved_date"] = today
                         updated_count += 1
-        
-            # Write updated CSV with resolved_date column
+
+            # Save all updates back into the file
             if reader:
                 with open(LOG_FILE, "w", newline="", encoding="utf-8") as f:
                     writer = csv.DictWriter(f, fieldnames=fieldnames)
                     writer.writeheader()
                     writer.writerows(reader)
-        
+
+            # Print a note in the console showing how many were marked as resolved
             print(f"Marked {updated_count} instances of '{question}' as resolved")
+
+            # After marking, send the admin back to the manage queries page
             return RedirectResponse(url="/admin/manage-queries", status_code=303)
-        
+
         except Exception as e:
+            # If something goes wrong, show an error and go back to manage queries
             print(f"Error marking query as resolved: {e}")
             return RedirectResponse(url="/admin/manage-queries", status_code=303)
 
-    @app.get("/admin/export-data")
+
+    @app.get("/admin/export-data")  # When the admin visits this page to export data
     async def admin_export_data(credentials: HTTPBasicCredentials = Depends(verify_admin)):
-        # Export chatbot system data
+        # Only the admin can access this function
+
+        # Prepare the data to be exported
         export_data = {
-            "custom_info": memory.custom_info,
-            "export_timestamp": datetime.now().isoformat()
+            "custom_info": memory.custom_info,  # Get stored chatbot data
+            "export_timestamp": datetime.now().isoformat()  # Add the time when it was exported
         }
 
+        # Return the data and a suggested file name for download
         return {
             "data": export_data,
             "filename": f"gsu_chatbot_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
         }
+
 
 # HTML Templates
 def get_base_style():
@@ -686,6 +720,7 @@ def get_base_style():
         }
     """
 
+
 def get_nav_html():
     """Navigation HTML with feedback page"""
     return """
@@ -698,21 +733,34 @@ def get_nav_html():
         </div>
     """
 
-def get_updated_dashboard_html(total_queries, answered_count, not_answered_count, accuracy_rate, total_conversations, total_sessions, total_custom_info, recent_queries):
-    """Generate HTML for the updated Admin Dashboard with clean responsive design"""
 
+def get_updated_dashboard_html(
+    total_queries, answered_count, not_answered_count, 
+    accuracy_rate, total_conversations, total_sessions, 
+    total_custom_info, recent_queries
+):
+    """Builds the HTML for the Admin Dashboard page"""
+
+    # Start with an empty string for the table of recent queries
     recent_queries_html = ""
+
+    # Go through each query record in the list
     for query in recent_queries:
+        # Format the timestamp (only keep date and time)
         timestamp = query.get('timestamp', '')[:19].replace('T', ' ')
+        
+        # Get the query text and shorten it if too long
         query_text = query.get('query_text', '')
         query_display = query_text[:80] + ('...' if len(query_text) > 80 else '')
         
+        # Check if the query was answered
         answered_field = (query.get('answered') or '').strip().lower()
         if answered_field in ["true", "1", "yes"]:
-            status_icon = '✅'
+            status_icon = '✅'  # Mark as answered
         else:
-            status_icon = '❌'
+            status_icon = '❌'  # Mark as not answered
             
+        # Add one row for this query in the table
         recent_queries_html += f"""
             <tr>
                 <td>{timestamp}</td>
@@ -793,6 +841,7 @@ def get_updated_dashboard_html(total_queries, answered_count, not_answered_count
     </body>
     </html>
     """
+
 
 def get_custom_info_html(custom_info):
     """Generate HTML for Custom Information management page with responsive design"""
@@ -881,6 +930,7 @@ def get_custom_info_html(custom_info):
     </html>
     """
 
+
 def get_add_custom_info_form_html(prefilled_topic=""):
     """Add custom info form HTML with responsive design and optional pre-filled topic"""
 
@@ -940,10 +990,9 @@ def get_add_custom_info_form_html(prefilled_topic=""):
     </html>
     """
 
+
 def get_full_faq_html(faq_list):
     """Full FAQ page HTML with responsive design and rank numbers"""
-
-
 
     faq_html = ""
     for index, faq in enumerate(faq_list):
@@ -965,8 +1014,6 @@ def get_full_faq_html(faq_list):
         
         # Format question for display (capitalize first letter)
         display_question = question.capitalize() if question else "Unknown question"
-        
-
         
         faq_html += f"""
             <tr>
@@ -1080,6 +1127,7 @@ def get_full_faq_html(faq_list):
     </html>
     """
 
+
 def get_manage_queries_with_resolved_html(all_needing_attention):
     """Manage Queries HTML with clean responsive design"""
     
@@ -1145,6 +1193,7 @@ def get_manage_queries_with_resolved_html(all_needing_attention):
     </body>
     </html>
     """
+
 
 def get_feedback_html(feedback_list, total_feedback, avg_rating, rating_distribution):
     """Feedback management HTML"""
@@ -1244,6 +1293,7 @@ def get_feedback_html(feedback_list, total_feedback, avg_rating, rating_distribu
     </body>
     </html>
     """
+
 
 def get_upload_handbook_html(handbook_info):
     """Upload handbook PDF form HTML"""
