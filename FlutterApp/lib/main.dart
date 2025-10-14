@@ -22,7 +22,7 @@ void main() { // The entry point of every Flutter app. Execution starts here.
     setWindowFrame(const Rect.fromLTWH(50, 50, 500, 1000)); // Positions the window at (50, 50) with a size of 500x1000 pixels upon opening.
   }
 
-  runApp(MyApp()); // Launches the root Flutter widget (`MyApp`) which builds the entire UI. 
+  runApp(const SplashWrapper()); // Launches the root Flutter widget (`MyApp`) which builds the entire UI. 
 }
 
 
@@ -132,6 +132,49 @@ Future<Map<String, dynamic>> submitFeedback(
 }
 
 
+class SplashWrapper extends StatefulWidget {
+  const SplashWrapper({super.key});
+
+  @override
+  State<SplashWrapper> createState() => _SplashWrapperState();
+}
+
+class _SplashWrapperState extends State<SplashWrapper> {
+  bool _showMainApp = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Show splash for 2 seconds before showing main app
+    Future.delayed(const Duration(seconds: 4), () {
+      setState(() {
+        _showMainApp = true;
+      });
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_showMainApp) {
+      return MyApp(); // Load your main app after splash
+    } else {
+      return MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: Scaffold(
+          backgroundColor: const Color(0xFF1976d2), // Blue background
+          body: Center(
+            child: Image.asset(
+              'assets/images/ChatBookAILogoAppIcon.png',
+              width: 180,
+            ),
+          ),
+        ),
+      );
+    }
+  }
+}
+
+
 class MyApp extends StatefulWidget { // Main app widget that can change while running
   @override
   _MyAppState createState() => _MyAppState(); // Creates the app’s state
@@ -143,6 +186,7 @@ class _MyAppState extends State<MyApp> { // Holds data and behavior for MyApp
     return MaterialApp( // Main app container
       title: 'ChatBook AI',
       theme: ThemeData( // App theme settings
+        fontFamily: 'Poppins',
         primaryColor: const Color(0xFF1976d2), // Main blue color
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1976d2)),  // Creates color shades from blue
       ),
@@ -175,7 +219,7 @@ class _MainScreenState extends State<MainScreen> { // Holds data and actions for
       backgroundColor: Colors.transparent, // Makes the background see-through  
       builder: (context) { // Builds what the bottom sheet will show  
         return _buildSheet( // Uses a helper function to build the sheet layout  
-          title: "Frequently Asked Questions", // Title shown at the top of the sheet  
+          title: "FAQs", // Title shown at the top of the sheet  
           child: FaqPage(onQuestionTap: _onFaqQuestionTap), // Shows the FAQ page and handles question clicks  
         );  
       },  
@@ -257,81 +301,107 @@ class _MainScreenState extends State<MainScreen> { // Holds data and actions for
   }  
 
 
-    @override
-  Widget build(BuildContext context) {
-    return Scaffold( // The main layout structure of the screen
-      resizeToAvoidBottomInset: true, // Makes the chat box move up when the keyboard appears
-      backgroundColor: Colors.white, // Sets background color to white
-      body: Column( // Arranges items vertically (top to bottom)
-        children: [
-          // Top AppBar
-          Container( // Blue header bar at the top
-            color: const Color(0xFF1976d2), // Blue background color
-            padding: EdgeInsets.only( // Adds space around the top bar
-              top: MediaQuery.of(context).padding.top + 10, // Space for system status bar
-              left: 16, // Space on the left
-              right: 16, // Space on the right
-              bottom: 10, // Space below the title
-            ),
-            child: Row( // Places title and menu button side by side
-              mainAxisAlignment: MainAxisAlignment.spaceBetween, // Keeps them apart from each other
-              children: [
-                const Text("ChatBook AI", // App title text
-                    style: TextStyle(
-                        color: Colors.white, // White text
-                        fontSize: 20, // Text size
-                        fontWeight: FontWeight.bold)), // Bold font
-                PopupMenuButton<String>( // Dropdown menu button (three dots)
-                  icon: const Icon(Icons.more_vert, color: Colors.white), // White "more" icon
-                  onSelected: (String result) { // What happens when an option is picked
-                    if (result == 'faq') { // If FAQ is chosen
-                      _showFAQPage(); // Open FAQ page
-                    } else if (result == 'feedback') { // If Feedback is chosen
-                      _showFeedbackPage(); // Open Feedback page
-                    } else if (result == 'about') { // If About is chosen
-                      _showAboutPage(); // Open About page
-                    }
-                  },
-                  itemBuilder: (context) => [ // The list of menu options
-                    const PopupMenuItem( // First option
-                      value: 'faq',
-                      child: ListTile(
-                        leading: Icon(Icons.help_outline), // Question mark icon
-                        title: Text('FAQ'), // Text label
-                        dense: true, // Makes it a bit smaller
-                      ),
+@override
+Widget build(BuildContext context) {
+  return Scaffold(
+    resizeToAvoidBottomInset: true, // Moves up chat box when keyboard appears
+    backgroundColor: Colors.white, // Background color
+    body: Column(
+      children: [
+        // 🔹 Top Header Bar
+        Container(
+          color: const Color(0xFF1976d2), // Blue header color
+          padding: EdgeInsets.only(
+            top: MediaQuery.of(context).padding.top + 10,
+            left: 12,
+            right: 8,
+            bottom: 10,
+          ),
+          child: Row(
+            children: [
+              // Left side: Icon + Title
+              Expanded(
+                child: Row(
+                  children: [
+                    // App logo (small icon)
+                    Image.asset(
+                      'assets/images/ChatBookAILogoAppIcon.png',
+                      height: 28,
+                      width: 28,
+                      fit: BoxFit.contain,
                     ),
-                    const PopupMenuItem( // Second option
-                      value: 'feedback',
-                      child: ListTile(
-                        leading: Icon(Icons.feedback_outlined), // Feedback icon
-                        title: Text('Feedback'), // Text label
-                        dense: true, // Compact layout
-                      ),
-                    ),
-                    const PopupMenuItem( // Third option
-                      value: 'about',
-                      child: ListTile(
-                        leading: Icon(Icons.info_outline), // Info icon
-                        title: Text('About'), // Text label
-                        dense: true, // Compact layout
+                    const SizedBox(width: 10),
+
+                    // App title text
+                    Flexible(
+                      child: Text(
+                        "ChatBook AI",
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          fontFamily: 'Poppins', // Uses your Poppins font
+                        ),
+                        overflow: TextOverflow.ellipsis, // Prevents overflow
+                        maxLines: 1,
+                        softWrap: false,
                       ),
                     ),
                   ],
                 ),
-              ],
-            ),
-          ),
+              ),
 
-          // Chat content
-          Expanded( // Fills remaining space with chat area
-            child: Container( // Background for the chat section
-              color: const Color(0xFFF4F6F9), // Light gray background
-              child: ChatPage(key: _chatPageKey), // Shows the main chat screen
-            ),
+              // Right side: Menu button
+              PopupMenuButton<String>(
+                icon: const Icon(Icons.more_vert, color: Colors.white),
+                onSelected: (String result) {
+                  if (result == 'faq') {
+                    _showFAQPage();
+                  } else if (result == 'feedback') {
+                    _showFeedbackPage();
+                  } else if (result == 'about') {
+                    _showAboutPage();
+                  }
+                },
+                itemBuilder: (context) => [
+                  const PopupMenuItem(
+                    value: 'faq',
+                    child: ListTile(
+                      leading: Icon(Icons.help_outline),
+                      title: Text('FAQ'),
+                      dense: true,
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'feedback',
+                    child: ListTile(
+                      leading: Icon(Icons.feedback_outlined),
+                      title: Text('Feedback'),
+                      dense: true,
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'about',
+                    child: ListTile(
+                      leading: Icon(Icons.info_outline),
+                      title: Text('About'),
+                      dense: true,
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
-        ],
-      ),
-    );
-  }
-}
+        ),
+
+        // 🔹 Chat Body Area
+        Expanded(
+          child: Container(
+            color: const Color(0xFFF4F6F9), // Light gray background
+            child: ChatPage(key: _chatPageKey), // Main chat screen
+          ),
+        ),
+      ],
+    ),
+  );
+}}

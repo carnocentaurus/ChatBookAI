@@ -1,180 +1,205 @@
-// chat.dart
-
 import 'package:flutter/material.dart'; // For building the app UI
 import 'main.dart'; // Imports functions like queryHandbook from main.dart
 
-class ChatPage extends StatefulWidget { // Chat screen that can change while running
-  const ChatPage({Key? key}) : super(key: key); // Constructor
+class ChatPage extends StatefulWidget {
+  const ChatPage({Key? key}) : super(key: key);
 
   @override
-  ChatPageState createState() => ChatPageState(); // Creates the state for this page
+  ChatPageState createState() => ChatPageState();
 }
 
-class ChatPageState extends State<ChatPage> { // Main chat logic and layout
-  final List<_Message> _messages = []; // Stores all chat messages
-  final TextEditingController _controller = TextEditingController(); // Controls the text box
-  final ScrollController _scrollController = ScrollController(); // Controls chat scrolling
-  bool _isTyping = false; // Shows when the bot is typing
+class ChatPageState extends State<ChatPage> {
+  final List<_Message> _messages = [];
+  final TextEditingController _controller = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
+  bool _isTyping = false;
 
   @override
-  void dispose() { // Runs when leaving the screen
-    _scrollController.dispose(); // Frees scroll memory
-    super.dispose(); // Calls parent cleanup
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
   }
 
-  void _scrollToBottom() { // Moves chat to the latest message
+  void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) { // Checks if chat can scroll
-        _scrollController.animateTo( // Smoothly scrolls down
-          _scrollController.position.maxScrollExtent, // Go to bottom
-          duration: const Duration(milliseconds: 300), // Takes 0.3 seconds
-          curve: Curves.easeOut, // Smooth ending motion
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
         );
       }
     });
   }
 
-  // Auto-query method that can be called from main.dart
-  void autoQuery(String question) { // Allows FAQ questions to go straight to chat
-    _controller.text = question; // Puts question in input box
-    _sendMessage(question); // Sends the question automatically
+  void autoQuery(String question) {
+    _controller.text = question;
+    _sendMessage(question);
   }
 
-  Future<void> _sendMessage(String text) async { // Sends user message and gets bot reply
-    if (text.trim().isEmpty) return; // Does nothing if input is empty
+  Future<void> _sendMessage(String text) async {
+    if (text.trim().isEmpty) return;
 
     setState(() {
-      _messages.add(_Message(text: text, isUser: true)); // Adds user message to chat
-      _isTyping = true; // Shows "Bot is typing..."
+      _messages.add(_Message(text: text, isUser: true));
+      _isTyping = true;
     });
 
-    _scrollToBottom(); // Scrolls chat to bottom
-    _controller.clear(); // Clears input box
+    _scrollToBottom();
+    _controller.clear();
 
     try {
-      final answer = await queryHandbook(text); // Sends text to backend and waits for reply
+      final answer = await queryHandbook(text);
 
       setState(() {
-        _messages.add(_Message(text: answer, isUser: false)); // Adds bot reply to chat
-        _isTyping = false; // Stops typing message
+        _messages.add(_Message(text: answer, isUser: false));
+        _isTyping = false;
       });
 
-      _scrollToBottom(); // Scroll again to latest reply
+      _scrollToBottom();
     } catch (e) {
       setState(() {
-        _messages.add( // Shows error if backend fails
+        _messages.add(
           _Message(text: "⚠️ Cannot connect to server.", isUser: false),
         );
-        _isTyping = false; // Stops typing message
+        _isTyping = false;
       });
 
-      _scrollToBottom(); // Scroll again to bottom
+      _scrollToBottom();
     }
   }
 
   @override
-  Widget build(BuildContext context) { // Builds the whole chat layout
-    return Column( // Puts everything in vertical order
+  Widget build(BuildContext context) {
+    final bool hasMessages = _messages.isNotEmpty;
+
+    return Column(
       children: [
-        Expanded( // Fills available space
+        Expanded(
           child: Column(
             children: [
               Expanded(
-                child: ListView.builder( // Shows all messages
-                  controller: _scrollController, // Makes it scrollable
-                  padding: const EdgeInsets.all(12), // Adds space around messages
-                  itemCount: _messages.length, // Number of chat messages
-                  itemBuilder: (context, index) { // Builds each message bubble
-                    final message = _messages[index]; // Gets the message
-                    return Align( // Aligns message left or right
-                      alignment: message.isUser
-                          ? Alignment.centerRight // User messages on right
-                          : Alignment.centerLeft, // Bot messages on left
-                      child: Container( // Message bubble box
-                        margin: const EdgeInsets.symmetric(vertical: 4), // Space between bubbles
-                        padding: const EdgeInsets.symmetric(
-                          vertical: 12, // Space above/below text
-                          horizontal: 16, // Space left/right of text
-                        ),
-                        decoration: BoxDecoration( // Styles the bubble
-                          color: message.isUser
-                              ? Colors.blue.shade700 // Blue for user
-                              : Colors.green.shade200, // Green for bot
-                          borderRadius: BorderRadius.circular(20), // Rounded corners
-                          boxShadow: [ // Adds soft shadow
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.05),
-                              blurRadius: 4, // Shadow softness
-                              offset: const Offset(2, 2), // Shadow position
+                child: hasMessages
+                    ? ListView.builder(
+                        controller: _scrollController,
+                        padding: const EdgeInsets.all(12),
+                        itemCount: _messages.length,
+                        itemBuilder: (context, index) {
+                          final message = _messages[index];
+                          return Align(
+                            alignment: message.isUser
+                                ? Alignment.centerRight
+                                : Alignment.centerLeft,
+                            child: Container(
+                              margin:
+                                  const EdgeInsets.symmetric(vertical: 4),
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 12,
+                                horizontal: 16,
+                              ),
+                              decoration: BoxDecoration(
+                                color: message.isUser
+                                    ? Colors.blue.shade700
+                                    : Colors.green.shade200,
+                                borderRadius: BorderRadius.circular(20),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.05),
+                                    blurRadius: 4,
+                                    offset: const Offset(2, 2),
+                                  ),
+                                ],
+                              ),
+                              child: SelectableText(
+                                message.text,
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  color: message.isUser
+                                      ? Colors.white
+                                      : Colors.black87,
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      )
+
+                    // 🌟 Splash screen when chat is empty
+                    : Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Image.asset(
+                              'assets/images/ChatBookAILogoSplashState.png', // make sure to add this in pubspec.yaml
+                              width: 120,
+                              height: 120,
+                            ),
+                            const SizedBox(height: 16),
+                            const Text(
+                              "ChatBook AI",
+                              style: TextStyle(
+                                fontSize: 22,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF1976d2),
+                                letterSpacing: 0.5,
+                              ),
                             ),
                           ],
                         ),
-                        child: SelectableText( // Lets user copy text
-                          message.text, // Shows the actual message
-                          style: TextStyle(
-                            fontSize: 15, // Text size
-                            color: message.isUser
-                                ? Colors.white // White for user
-                                : Colors.black87, // Black for bot
-                          ),
-                        ),
                       ),
-                    );
-                  },
-                ),
               ),
-              if (_isTyping) // Shows this only when bot is typing
+
+              if (_isTyping)
                 const Padding(
-                  padding: EdgeInsets.all(8.0), // Adds space around text
+                  padding: EdgeInsets.all(8.0),
                   child: Align(
-                    alignment: Alignment.centerLeft, // Aligns to left
+                    alignment: Alignment.centerLeft,
                     child: Text(
-                      "Bot is typing...", // Typing message
-                      style: TextStyle(fontStyle: FontStyle.italic), // Italic style
+                      "Bot is typing...",
+                      style: TextStyle(fontStyle: FontStyle.italic),
                     ),
                   ),
                 ),
 
               // Input bar
-              Container( // The bottom message input area
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6), // Inner spacing
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                 decoration: BoxDecoration(
-                  color: Colors.white, // White background
-                  border: Border( // Adds a thin line on top
+                  color: Colors.white,
+                  border: Border(
                     top: BorderSide(color: Colors.grey.shade300),
                   ),
                 ),
-                child: Row( // Places input and send button side by side
+                child: Row(
                   children: [
                     Expanded(
-                      child: TextField( // Input box for typing messages
-                        controller: _controller, // Connects to text controller
-                        onSubmitted: (text) => _sendMessage(text), // Sends when pressing enter
+                      child: TextField(
+                        controller: _controller,
+                        onSubmitted: (text) => _sendMessage(text),
                         decoration: InputDecoration(
-                          hintText: "Message", // Placeholder text
+                          hintText: "Message",
                           hintStyle: TextStyle(
-                            color: Colors.grey.shade600, // Faint grey color
-                            fontWeight: FontWeight.w400, // Regular weight
+                            color: Colors.grey.shade600,
+                            fontWeight: FontWeight.w400,
                           ),
-                          filled: true, // Fills with color
-                          fillColor: Colors.grey.shade100, // Light grey background
+                          filled: true,
+                          fillColor: Colors.grey.shade100,
                           contentPadding: const EdgeInsets.symmetric(
-                            vertical: 10, // Space above and below text
-                            horizontal: 14, // Space inside box sides
+                            vertical: 10,
+                            horizontal: 14,
                           ),
-                          border: InputBorder.none, // No outline border
-                          enabledBorder: InputBorder.none, // No border when enabled
-                          focusedBorder: InputBorder.none, // No border when focused
+                          border: InputBorder.none,
                         ),
                       ),
                     ),
-                    const SizedBox(width: 6), // Space before send button
-                    CircleAvatar( // Round send button
-                      backgroundColor: Colors.blue.shade700, // Blue background
+                    const SizedBox(width: 6),
+                    CircleAvatar(
+                      backgroundColor: Colors.blue.shade700,
                       child: IconButton(
-                        icon: const Icon(Icons.send, // Send icon
+                        icon: const Icon(Icons.send,
                             color: Colors.white, size: 18),
-                        onPressed: () => _sendMessage(_controller.text), // Sends message when tapped
+                        onPressed: () => _sendMessage(_controller.text),
                       ),
                     ),
                   ],
@@ -188,8 +213,8 @@ class ChatPageState extends State<ChatPage> { // Main chat logic and layout
   }
 }
 
-class _Message { // Holds one chat message
-  final String text; // The message text
-  final bool isUser; // True if from user, false if from bot
-  _Message({required this.text, required this.isUser}); // Constructor
+class _Message {
+  final String text;
+  final bool isUser;
+  _Message({required this.text, required this.isUser});
 }
