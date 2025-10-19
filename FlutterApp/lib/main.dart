@@ -26,12 +26,12 @@ void main() { // The entry point of every Flutter app. Execution starts here.
 }
 
 
-String getBaseUrl() {  // This function determines which server address to use depending on the platform (desktop or mobile).
+String getBaseUrl() {
   if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-    return "http://127.0.0.1:8000"; // Returns the localhost URL — typically used when developing and testing on desktop.
+    return "http://127.0.0.1:8000"; // For desktop testing
   } 
   else if (Platform.isAndroid || Platform.isIOS) {
-    return "http://10.0.15.188:8000"; // Returns the LAN (Local Area Network) IP address of the PC where FastAPI is running.  
+    return "http://10.52.56.213:8000"; // Your PC's Wi-Fi IP
   } 
   else {
     throw UnsupportedError("Unsupported platform");
@@ -43,20 +43,19 @@ String getBaseUrl() {  // This function determines which server address to use d
 String _sessionId = DateTime.now().millisecondsSinceEpoch.toString();
 
 
+// This function sends your question to the chatbot backend, waits for a response, and returns the chatbot’s answer.
 Future<String> queryHandbook(String question) async {  // Defines an asynchronous function that takes the user's question as input
-  final url = Uri.parse("${getBaseUrl()}/chat"); // Constructs the full backend API endpoint URL by appending '/chat' to the base URL. 
+  final url = Uri.parse("${getBaseUrl()}/chat"); // this is the endpoint where the chatbot API listens. 
   try {
-    // Sends an HTTP POST request to the backend asynchronously.
-    final response = await http.post(
+    final response = await http.post( // Sends a POST request to the server (a way of sending data).
       url,
-      headers: {"Content-Type": "application/json"},
+      headers: {"Content-Type": "application/json"}, // Tells the server what type of data you’re sending (in this case, JSON).
       // The unique session ID ensures the backend maintains session context per user.
       body: jsonEncode({"query": question, "session_id": _sessionId}),
     );
-
     if (response.statusCode == 200) { // Checks if the HTTP status code indicates success (200 OK).
-      final responseData = jsonDecode(response.body);  // Decodes the JSON response body from the backend into a Dart Map.
-      return responseData["answer"] ?? "No response received"; // Returns the chatbot’s answer if it exists.  
+      final responseData = jsonDecode(response.body);  // Turns that text into a map (like a dictionary).
+      return responseData["answer"] ?? "No response received"; // Picks the chatbot’s actual reply from that map. 
     } 
     else { // Executes if the server responds but with an error (e.g., 404, 500).
       return "Server error: ${response.statusCode}";
@@ -139,33 +138,34 @@ class SplashWrapper extends StatefulWidget {
   State<SplashWrapper> createState() => _SplashWrapperState();
 }
 
-class _SplashWrapperState extends State<SplashWrapper> {
-  bool _showMainApp = false;
+class _SplashWrapperState extends State<SplashWrapper> { // This class controls what happens during the splash screen
+  bool _showMainApp = false; // Starts as false because we want to show the splash first
 
   @override
-  void initState() {
-    super.initState();
-    // Show splash for 2 seconds before showing main app
-    Future.delayed(const Duration(seconds: 4), () {
-      setState(() {
-        _showMainApp = true;
+  void initState() { // Runs automatically when this screen first appears
+    super.initState(); // Keeps Flutter’s setup working properly
+    // Wait 4 seconds before showing the main app
+    Future.delayed(const Duration(seconds: 4), () { // Waits for 4 seconds
+      setState(() { // Updates the screen
+        _showMainApp = true; // After waiting, switch to the main app
       });
     });
   }
 
   @override
-  Widget build(BuildContext context) {
-    if (_showMainApp) {
-      return MyApp(); // Load your main app after splash
-    } else {
-      return MaterialApp(
-        debugShowCheckedModeBanner: false,
-        home: Scaffold(
-          backgroundColor: const Color(0xFF1976d2), // Blue background
-          body: Center(
-            child: Image.asset(
-              'assets/images/ChatBookAILogoAppIcon.png',
-              width: 180,
+  Widget build(BuildContext context) { // Decides what to show on the screen
+    if (_showMainApp) { // If true, show the main app
+      return MyApp(); // Open the main app
+    } 
+    else { // If still false, keep showing the splash
+      return MaterialApp( // Basic app setup
+        debugShowCheckedModeBanner: false, // Hides the “debug” label
+        home: Scaffold( // The main layout for this screen
+          backgroundColor: const Color(0xFF1976d2), // Set background color to blue
+          body: Center( // Put things in the middle of the screen
+            child: Image.asset( // Show an image from the app’s files
+              'assets/images/ChatBookAILogoAppIcon.png', // The logo image to show
+              width: 180, // Size of the logo
             ),
           ),
         ),
@@ -175,6 +175,7 @@ class _SplashWrapperState extends State<SplashWrapper> {
 }
 
 
+// the overall app container
 class MyApp extends StatefulWidget { // Main app widget that can change while running
   @override
   _MyAppState createState() => _MyAppState(); // Creates the app’s state
@@ -195,11 +196,13 @@ class _MyAppState extends State<MyApp> { // Holds data and behavior for MyApp
   }
 }
 
+// controls the app’s behavior and look
 class MainScreen extends StatefulWidget { // The main screen of the app
   @override 
   _MainScreenState createState() => _MainScreenState();
 }
 
+//  what users see first when the app starts
 class _MainScreenState extends State<MainScreen> { // Holds data and actions for MainScreen
   final GlobalKey<ChatPageState> _chatPageKey = GlobalKey<ChatPageState>(); // Key to access the chat page’s state
 
@@ -301,26 +304,28 @@ class _MainScreenState extends State<MainScreen> { // Holds data and actions for
   }  
 
 
+// Describes how the home page looks and behaves
 @override
 Widget build(BuildContext context) {
-  return Scaffold(
+  return Scaffold( // Main layout structure for the screen
     resizeToAvoidBottomInset: true, // Moves up chat box when keyboard appears
     backgroundColor: Colors.white, // Background color
-    body: Column(
+    body: Column( // The main content of the screen goes inside body.
       children: [
-        // 🔹 Top Header Bar
-        Container(
+        // Top Header Bar
+        Container( // Container is like a box that can have color, padding, and other styles.
           color: const Color(0xFF1976d2), // Blue header color
           padding: EdgeInsets.only(
+            // adds spacing for the status bar (so text doesn’t touch the top of the screen).
             top: MediaQuery.of(context).padding.top + 10,
             left: 12,
             right: 8,
             bottom: 10,
           ),
-          child: Row(
+          child: Row( // A Row arranges things horizontally (side by side).
             children: [
               // Left side: Icon + Title
-              Expanded(
+              Expanded( // Expanded means this section will take up all available space on the left side.
                 child: Row(
                   children: [
                     // App logo (small icon)
@@ -328,12 +333,12 @@ Widget build(BuildContext context) {
                       'assets/images/ChatBookAILogoAppIcon.png',
                       height: 28,
                       width: 28,
-                      fit: BoxFit.contain,
+                      fit: BoxFit.contain, // It tells Flutter how to resize the image to fit its box.
                     ),
-                    const SizedBox(width: 10),
+                    const SizedBox(width: 10), // Adds space (10 pixels) between the logo and the text.
 
                     // App title text
-                    Flexible(
+                    Flexible( // Flexible makes sure the text doesn’t overflow if it’s too long.
                       child: Text(
                         "ChatBook AI",
                         style: const TextStyle(
@@ -342,24 +347,26 @@ Widget build(BuildContext context) {
                           fontWeight: FontWeight.bold,
                           fontFamily: 'Poppins', // Uses your Poppins font
                         ),
-                        overflow: TextOverflow.ellipsis, // Prevents overflow
-                        maxLines: 1,
-                        softWrap: false,
+                        overflow: TextOverflow.ellipsis, // ellipsis adds “…” if it can’t fit.
+                        maxLines: 1, // It limits the text to only one line.
+                        softWrap: false, // tells Flutter not to automatically move the text to the next line, even if it’s too long.
                       ),
                     ),
                   ],
                 ),
               ),
 
-              // Right side: Menu button
+              // this creates the three-dot menu button on the right side.
               PopupMenuButton<String>(
                 icon: const Icon(Icons.more_vert, color: Colors.white),
-                onSelected: (String result) {
+                onSelected: (String result) { // a callback function that runs when the user picks an option from the menu.
                   if (result == 'faq') {
                     _showFAQPage();
-                  } else if (result == 'feedback') {
+                  } 
+                  else if (result == 'feedback') {
                     _showFeedbackPage();
-                  } else if (result == 'about') {
+                  } 
+                  else if (result == 'about') {
                     _showAboutPage();
                   }
                 },
@@ -369,7 +376,7 @@ Widget build(BuildContext context) {
                     child: ListTile(
                       leading: Icon(Icons.help_outline),
                       title: Text('FAQ'),
-                      dense: true,
+                      dense: true, // Makes the list item more compact — less space between items vertically.
                     ),
                   ),
                   const PopupMenuItem(
@@ -394,8 +401,8 @@ Widget build(BuildContext context) {
           ),
         ),
 
-        // 🔹 Chat Body Area
-        Expanded(
+        // Chat Body Area
+        Expanded( // Expanded fills the rest of the screen below the header bar.
           child: Container(
             color: const Color(0xFFF4F6F9), // Light gray background
             child: ChatPage(key: _chatPageKey), // Main chat screen

@@ -105,6 +105,7 @@ retriever = None    # helps find related info quickly
 
 last_run_ids = {}  # keeps track of sessions
 
+
 def sanitize_text(text: str) -> str:
     """Clean text before saving to DB or CSV - Enhanced version that preserves formatting"""
     if not text:
@@ -158,7 +159,11 @@ class ChatbotMemory:
     def init_database(self):
         os.makedirs("data", exist_ok=True)  # Make sure the "data" folder exists (creates if missing)
         conn = sqlite3.connect(MEMORY_DB)  # Connect to the SQLite database file
+        # cursor is like a pen — it’s used to write or read data from the database.
         cursor = conn.cursor()  # Create a cursor object to run SQL commands
+
+        # conversations table → stores actual chat messages
+        # sessions table → stores info about each user’s chat session (like a summary)
         
         # Create "conversations" table if it doesn't already exist
         # Stores each chat with session ID, time, user message, bot response, and context used
@@ -209,7 +214,7 @@ class ChatbotMemory:
             print(f"Error saving custom info: {e}")
 
     
-    # Get or create a session with error handling
+    # Every time someone chats with the bot
     def get_or_create_session(self, session_id: str) -> str:
         try:
             conn = sqlite3.connect(MEMORY_DB)  # Connect to DB
@@ -217,9 +222,9 @@ class ChatbotMemory:
             
             clean_session_id = sanitize_text(session_id)  # Clean session ID text
             
-            # Check if session already exists
+            # If the session already exists, it just reuses it
             cursor.execute('SELECT session_id FROM sessions WHERE session_id = ?', (clean_session_id,))
-            if not cursor.fetchone():  # If session does not exist, create it
+            if not cursor.fetchone():  # If it’s a new user or session, the chatbot creates a fresh record. 
                 cursor.execute('''
                     INSERT INTO sessions (session_id, created_at, last_active, total_messages)
                     VALUES (?, ?, ?, 0)
@@ -234,19 +239,20 @@ class ChatbotMemory:
             return sanitize_text(session_id)  # Still return sanitized ID
         
     
-    # Add conversation to memory with enhanced safety
+    # the chatbot can later refer back to recent messages if the user continues asking related questions.
     def add_conversation(self, session_id: str, user_message: str, bot_response: str, context_used: str = ""):
         try:
             conn = sqlite3.connect(MEMORY_DB)  # Connect to DB
             cursor = conn.cursor()  # Cursor for SQL
             
-            # Clean all inputs
+            # Clean all inputs before saving anything
             clean_session_id = sanitize_text(session_id)
             clean_user_message = sanitize_text(user_message)
             clean_bot_response = sanitize_text(bot_response)
             clean_context_used = sanitize_text(context_used)
             
-            # Insert new conversation into DB
+            # Adds a new record to the conversations table
+            # The ? symbols are placeholders for actual values that will be inserted later.
             cursor.execute('''
                 INSERT INTO conversations (session_id, timestamp, user_message, bot_response, context_used)
                 VALUES (?, ?, ?, ?, ?)
@@ -258,7 +264,8 @@ class ChatbotMemory:
                 clean_context_used
             ))
 
-            # Update session activity and message count
+            # updates the chatbot’s session log every time you talk to it.
+            # WHERE session_id = ? → only update the record belonging to the current chat session.
             cursor.execute('''
                 UPDATE sessions SET last_active = ?, total_messages = total_messages + 1
                 WHERE session_id = ?
@@ -293,7 +300,8 @@ class ChatbotMemory:
                 LIMIT ?
             ''', (clean_session_id, limit))
             
-            conversations = []  # Store results here
+            conversations = []  # later used by the bot to recall relevant past replies
+
             for row in cursor.fetchall():  # Loop through retrieved rows
                 user_msg = sanitize_text(row[0]) if row[0] else ""  # Clean user message
                 bot_msg = sanitize_text(row[1]) if row[1] else ""   # Clean bot response
@@ -335,20 +343,21 @@ class ChatbotMemory:
             print(f"❌ Error adding custom info: {e}")
 
 
-    # Get relevant custom information for the query
+    # checks if the user’s question relates to any of the custom information stored by an admin.
     def get_relevant_custom_info(self, query: str) -> str:
         try:
             relevant = []  # Store matches
             clean_query = sanitize_text(query.lower())  # Clean query text
             
-            # Loop through stored custom info
+            # self.custom_info is a dictionary that holds all manually added data (from custom_info.json)
             for info in self.custom_info.values():
                 clean_topic = sanitize_text(info['topic'].lower())
                 
-                # If topic or any word in topic matches query
+                # even partial matches (like one word) will trigger a match
                 if (clean_topic in clean_query or 
                     any(word in clean_query for word in clean_topic.split())):
                     clean_information = sanitize_text(info['information'])
+                    # adds a formatted text to the list
                     relevant.append(f"ADDITIONAL INFO: {info['topic']}: {clean_information}")
             
             return "\n".join(relevant) if relevant else ""  # Return joined string or empty
@@ -399,7 +408,7 @@ def extract_keywords(query):
     # Define common stop words that should be ignored
     stop_words = {
         'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to',
-        'for', 'of', 'with', 'by', 'is', 'are', 'was', 'were'
+        'for', 'of', 'with', 'by', 'is', 'are', 'was', 'were', 'what'
     }
     
     # Use regex to extract words (alphanumeric sequences) in lowercase
@@ -461,9 +470,9 @@ async def smart_retrieval(query, retriever, handbook_text):
         scored_sentences.sort(key=lambda x: x[1], reverse=True)
         # Keep top 15 relevant sentences
         for sentence, _ in scored_sentences[:15]:
-            all_chunks.add((sentence, 999))  # Use 999 as chunk_id for keyword matches
+            all_chunks.add((sentence, 999))  # Uses chunk_id = 999 to label these as keyword-based chunks
     
-    # Convert all collected chunks into Document objects
+    # all found chunks from both strategies are converted into standard Document objects that LangChain can process
     result_docs = []
     for content, chunk_id in all_chunks:
         doc = Document(page_content=content, metadata={"chunk_id": chunk_id})
@@ -473,6 +482,7 @@ async def smart_retrieval(query, retriever, handbook_text):
 
 
 # Build context including memory and custom info (minimal conversation history)
+# contex = the information the chatbot gives the AI model before it generates an answer
 def build_context_with_memory(docs, query, session_id, max_length=8000):
     # List to hold all different parts of the context (history, custom info, handbook)
     context_parts = []
@@ -666,6 +676,7 @@ def load_embeddings_and_db():
             
             # Breaks the handbook text into smaller parts
             from langchain.text_splitter import RecursiveCharacterTextSplitter
+            # AI reads better in small sections
             text_splitter = RecursiveCharacterTextSplitter(
                 chunk_size=1000,  # each part has 1000 characters
                 chunk_overlap=200  # overlaps a little so no information is lost
@@ -684,7 +695,8 @@ def load_embeddings_and_db():
         
         # Creates a retriever — lets the AI look up related handbook info when asked
         retriever = db.as_retriever(
-            search_type="mmr", 
+            # Maximal Marginal Relevance
+            search_type="mmr", # Finds results that are relevant to the query But also diverse
             search_kwargs={"k": 15, "fetch_k": 35, "lambda_mult": 0.5}
         )
         
@@ -773,9 +785,11 @@ async def startup_event():
         print(f"❌ Error initializing embeddings/db: {e}")
 
 
+'''
 @app.get("/")
 async def root():
     return {"status": "Server is running!", "message": "Hello from Render"}
+'''
 
 
 # This route shows a public report of chatbot performance
@@ -855,7 +869,7 @@ async def run_chat_pipeline(clean_query: str, clean_context: str, clean_prompt: 
             execution_order=1     # Get most recent run
         ))
 
-        # If there’s a trace available, store its ID
+        # If there’s a trace (record) available, store its ID
         if recent_runs:
             run_id = str(recent_runs[0].id)
             print(f"✅ Found recent trace_id: {run_id}")
@@ -897,10 +911,10 @@ def traced_context(docs, query, session_id):
 
 
 @app.post("/chat")
-async def chat(request: Request):
+async def chat(request: Request): # request = user query
     """Main chat endpoint that handles student questions"""
-    global retriever, HANDBOOK_TEXT, model
-    start_time = time.time()
+    global retriever, HANDBOOK_TEXT, model # allows this function to access global variables
+    start_time = time.time() # Record start time to measure how long the chatbot takes to respond
     
     try:
         # Check if the AI model is set up
@@ -935,11 +949,11 @@ async def chat(request: Request):
         # If no related text found in handbook
         if not docs:
             no_answer_msg = "I couldn't find relevant information in the handbook for your question."
-            memory.add_conversation(session_id, query, no_answer_msg)
+            memory.add_conversation(session_id, query, no_answer_msg) # Save this failed search into the chatbot’s memory
             await asyncio.get_event_loop().run_in_executor(
                 executor, log_query, query, no_answer_msg, False, 0
             )
-            return {"answer": no_answer_msg}
+            return {"answer": no_answer_msg} # Send the “no information found” message back to the user
         
         # Step 2: Build the context for the model
         context = traced_context(docs, query, session_id)
@@ -966,7 +980,7 @@ async def chat(request: Request):
         ]
         clean_prompt = sanitize_text("\n".join(prompt_parts))
         if len(clean_prompt) > 30000:
-            clean_prompt = clean_prompt[:30000] + "..."
+            clean_prompt = clean_prompt[:30000] + "..." # gets cut down to 30,000 characters
         
         # Step 4: Run the model and track it with LangSmith
         response_text, run_id = await run_chat_pipeline(
@@ -986,6 +1000,7 @@ async def chat(request: Request):
         print(f"✅ Answer generated successfully ({len(answer)} characters)")
         
         # Save question and answer to memory
+        # Take only the first 200 characters of clean_context
         memory.add_conversation(session_id, query, answer, clean_context[:200])
         
         # Step 6: Check if the response was complete or unclear
@@ -1071,8 +1086,8 @@ async def submit_feedback(feedback: FeedbackSubmission):
             }
             
             # simple helper to record feedback activity
-            from langsmith import traceable
-            @traceable(name="user_feedback_submission")
+            from langsmith import traceable # a tool for observing, debugging, and improving AI apps
+            @traceable(name="user_feedback_submission") # When this function runs, record its activity in LangSmith under this name
             def log_feedback_event(data):
                 return {"status": "feedback_logged", "data": data}
             

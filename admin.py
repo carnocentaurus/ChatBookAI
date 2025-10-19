@@ -12,10 +12,13 @@ from datetime import datetime  # records the date and time of actions
 from collections import Counter  # counts how many times something appears
 from urllib.parse import quote, unquote  # cleans or restores text used in web links
 
+from dotenv import load_dotenv
+load_dotenv()
+
 # Security setup
 security = HTTPBasic()  # sets up basic login checking
-ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")  # gets the admin name or uses "admin" if none is set
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "gsu2025")  # gets the admin password or uses "gsu2025" if none is set
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")  # gets the admin name or uses "admin" if none is set
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "gsu2025")  # gets the admin password or uses "gsu2025" if none is set
 
 
 # Function to check if the admin login details are correct
@@ -27,7 +30,7 @@ def verify_admin(credentials: HTTPBasicCredentials = Depends(security)):
         raise HTTPException(  # stop the request and show an error message
             status_code=401,
             detail="Invalid admin credentials",
-            headers={"WWW-Authenticate": "Basic"},
+            headers={"WWW-Authenticate": "Basic"}, # tells the browser: “I’m using HTTP Basic Authentication
         )
     
     return credentials.username  # if correct, allow access and return the name
@@ -42,6 +45,7 @@ def setup_admin_routes(app, memory, LOG_FILE, MEMORY_DB):
 
         # Try to read the activity log for statistics
         try:
+            # with = automatic close
             with open(LOG_FILE, "r", encoding="utf-8") as f:   # Open the log file
                 reader = list(csv.DictReader(f)) # Read its content as a list of rows
 
