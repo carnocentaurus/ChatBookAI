@@ -102,8 +102,20 @@ def setup_admin_routes(app, memory, LOG_FILE, MEMORY_DB):
     ):
         # Add the new custom info to memory
         memory.add_custom_info(topic, information) # Save the topic and info
+        # 303 = redirect client
         return RedirectResponse(url="/admin/custom-info", status_code=303)  # Go back to the list after adding
-
+    
+    @app.get("/admin/custom-info/delete/{info_id}")
+    async def admin_delete_info(
+        info_id: str,
+        credentials: HTTPBasicCredentials = Depends(verify_admin)
+    ):
+        # Delete a custom info entry if it exists
+        if info_id in memory.custom_info:
+            del memory.custom_info[info_id]
+            memory.save_custom_info()
+        return RedirectResponse(url="/admin/custom-info", status_code=303)
+    
     
     @app.get("/admin/upload-handbook", response_class=HTMLResponse)  # When admin visits the upload page
     async def admin_upload_handbook_form(credentials: HTTPBasicCredentials = Depends(verify_admin)):  # Check admin login
@@ -127,7 +139,8 @@ def setup_admin_routes(app, memory, LOG_FILE, MEMORY_DB):
     ):
         try:
             if not file.filename.lower().endswith('.pdf'):  # Check if the file is a PDF
-                raise HTTPException(status_code=400, detail="Only PDF files are allowed")  # Stop if not a PDF
+                # 404 = bad/invalid request
+                raise HTTPException(status_code=400, detail="Only PDF files are allowed")
 
             os.makedirs("data", exist_ok=True)  # Make sure the folder exists
 
@@ -143,14 +156,14 @@ def setup_admin_routes(app, memory, LOG_FILE, MEMORY_DB):
 
             if os.path.getsize(temp_path) == 0:  # If uploaded file is empty
                 os.remove(temp_path)  # Delete it
-                raise HTTPException(status_code=400, detail="Uploaded file is empty")  # Show error
+                raise HTTPException(status_code=400, detail="Uploaded file is empty")
 
             shutil.move(temp_path, handbook_path)  # Replace the old handbook with the new one
 
             if os.path.exists(backup_path):  # If backup exists
                 os.remove(backup_path)  # Delete it since upload succeeded
 
-            return RedirectResponse(url="/admin/custom-info?upload=success", status_code=303)  # Go back to info page after upload
+            return RedirectResponse(url="/admin/custom-info?upload=success", status_code=303)
 
         except HTTPException:
             raise  # Rethrow expected errors
@@ -161,18 +174,6 @@ def setup_admin_routes(app, memory, LOG_FILE, MEMORY_DB):
             if os.path.exists(temp_path):  # Clean up temp file
                 os.remove(temp_path)
             raise HTTPException(status_code=500, detail=f"Error uploading handbook: {str(e)}")  # Show error message
-
-
-    @app.get("/admin/custom-info/delete/{info_id}")
-    async def admin_delete_info(
-        info_id: str,
-        credentials: HTTPBasicCredentials = Depends(verify_admin)
-    ):
-        # Delete a custom info entry if it exists
-        if info_id in memory.custom_info:
-            del memory.custom_info[info_id]
-            memory.save_custom_info()
-        return RedirectResponse(url="/admin/custom-info", status_code=303)
     
 
     @app.get("/admin/faq", response_class=HTMLResponse)  # When admin opens the FAQ page
@@ -248,7 +249,8 @@ def setup_admin_routes(app, memory, LOG_FILE, MEMORY_DB):
             for query in not_answered_queries:
                 query_text = (query.get("query_text") or "").strip().lower()
                 if query_text:
-                    not_answered_counter[query_text] += 1  # Add count for this question
+                    # Adds one each time the same question appears
+                    not_answered_counter[query_text] += 1
 
             # Sort questions by how often they appear
             all_needing_attention = not_answered_counter.most_common()
@@ -314,9 +316,10 @@ def setup_admin_routes(app, memory, LOG_FILE, MEMORY_DB):
             with open(LOG_FILE, "r", encoding="utf-8") as f:
                 reader = list(csv.DictReader(f))  # Read all the records
 
-            # Make sure there’s a column for “resolved_date”
+            # Make sure there’s a column for “resolved_date” in csv file
             fieldnames = reader[0].keys() if reader else []
             if 'resolved_date' not in fieldnames:
+                # if not create one
                 fieldnames = list(fieldnames) + ['resolved_date']
 
             # Get today’s date to mark the question as resolved
@@ -325,7 +328,7 @@ def setup_admin_routes(app, memory, LOG_FILE, MEMORY_DB):
 
             # Go through every record in the file
             for record in reader:
-                # Check if this record matches the question entered
+                # Check if this record matches the question the admin wants resolved
                 if record.get("query_text", "").strip().lower() == question.lower():
                     # If not yet resolved, mark it with today’s date
                     if not record.get("resolved_date", "").strip():
@@ -343,7 +346,7 @@ def setup_admin_routes(app, memory, LOG_FILE, MEMORY_DB):
                     writer.writeheader()
                     writer.writerows(reader)
 
-            # Print a note in the console showing how many were marked as resolved
+            # Print a note in the the terminal showing how many were marked as resolved
             print(f"Marked {updated_count} instances of '{question}' as resolved")
 
             # After marking, send the admin back to the manage queries page
@@ -376,6 +379,7 @@ def setup_admin_routes(app, memory, LOG_FILE, MEMORY_DB):
 def get_base_style():
     """Clean, modern CSS with proper responsive design"""
     return """
+        /*CSS variables (custom properties).reused throughout the stylesheet*/
         :root {
             --blue: #1976d2;
             --blue-dark: #1565c0;
@@ -392,6 +396,7 @@ def get_base_style():
             --border: #ddd;
         }
 
+        /*ensures padding and borders are calculated neatly*/
         * { box-sizing: border-box; }
 
         body {
@@ -408,6 +413,7 @@ def get_base_style():
             padding: 0 16px; 
         }
 
+        /* white panels around content sections (with rounded corners and shadow) */
         .card {
             background: white;
             padding: 20px;
@@ -416,7 +422,7 @@ def get_base_style():
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
 
-        /* Stats Grid */
+        /* styles the dashboard statistic boxes */
         .stats {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -446,7 +452,7 @@ def get_base_style():
         .not-answered-stat { background: #fff3e0; }
         .not-answered-stat h3 { color: var(--orange); }
 
-        /* Tables */
+        /* makes data tables clean, scrollable, and consistent */
         .table-container {
             width: 100%;
             overflow-x: auto;
@@ -510,7 +516,7 @@ def get_base_style():
         h1 { font-size: 2rem; margin-bottom: 1rem; }
         h2 { font-size: 1.4rem; margin-bottom: 0.8rem; }
 
-        /* Navigation */
+        /* styles the top navigation area — the blue tabs or menu links */
         .nav {
             background: var(--blue);
             padding: 15px;
@@ -849,14 +855,15 @@ def get_updated_dashboard_html(
 
 def get_custom_info_html(custom_info):
     """Generate HTML for Custom Information management page with responsive design"""
-
+ 
+    # .items() returns a list of (key, value) pairs
     sorted_info = sorted(custom_info.items(), key=lambda x: x[1]['added_at'], reverse=True)
 
     info_html = ""
     for info_id, info in sorted_info:
         topic = info['topic']
         information = info['information'][:100] + ('...' if len(info['information']) > 100 else '')
-        added = info['added_at'][:10]
+        added = info['added_at'][:10] # first 10 chars of a timestamp like 2025-10-18
         
         info_html += f"""
             <tr>
@@ -879,13 +886,16 @@ def get_custom_info_html(custom_info):
         <style>{get_base_style()}</style>
         <script>
             window.addEventListener('DOMContentLoaded', function() {{
+                // window.location.search gives you the query part of the current URL
+                // new URLSearchParams(...) creates an easy-to-use object for reading or modifying those query parameters.
                 const urlParams = new URLSearchParams(window.location.search);
+
                 if (urlParams.get('upload') === 'success') {{
                     const successDiv = document.getElementById('success-message');
                     if (successDiv) successDiv.style.display = 'block';
                     const url = new URL(window.location);
-                    url.searchParams.delete('upload');
-                    window.history.replaceState({{}}, '', url);
+                    url.searchParams.delete('upload'); // Removes the upload query parameter
+                    window.history.replaceState({{}}, '', url); // update the browser’s address bar silently
                 }}
             }});
         </script>
@@ -1136,8 +1146,10 @@ def get_manage_queries_with_resolved_html(all_needing_attention):
     """Manage Queries HTML with clean responsive design"""
     
     attention_html = ""
+    # all_needing_attention is a list of tuples containing the query and count
     for query, count in all_needing_attention:
-        query_encoded = quote(query)
+        query_encoded = quote(query) # quote() ensures the text is safe to use in links
+        # takes the first 80 characters of the question
         query_display = query[:80] + ('...' if len(query) > 80 else '')
         
         attention_html += f"""
@@ -1399,6 +1411,7 @@ def get_upload_handbook_html(handbook_info):
                 progressBar.textContent = '0%';
                 progressText.textContent = 'Uploading handbook...';
                 
+                // creates a fake progress animation (because real upload progress requires a backend API event)
                 let progress = 0;
                 const interval = setInterval(function() {{
                     progress += 5;
@@ -1408,6 +1421,7 @@ def get_upload_handbook_html(handbook_info):
                     }}
                 }}, 200);
                 
+                // After 5 seconds (5000 ms), it stops the fake animation
                 setTimeout(function() {{
                     clearInterval(interval);
                 }}, 5000);
