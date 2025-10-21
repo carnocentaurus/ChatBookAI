@@ -26,8 +26,22 @@ void main() { // The entry point of every Flutter app. Execution starts here.
 }
 
 
+const bool useProduction = true;  // true = Render, false = local
+
 String getBaseUrl() {
-  return "https://chatbookai-render-2.onrender.com";
+  if (useProduction) {
+    return "https://chatbookai-render-2.onrender.com";  // Production
+  } 
+  else {
+    // Local testing
+    if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+      return "http://127.0.0.1:8000";
+    } 
+    else if (Platform.isAndroid || Platform.isIOS) {
+      return "http://192.168.1.100:8000";  // Your PC's IP
+    }
+  }
+  throw UnsupportedError("Unsupported platform");
 }
 
 
