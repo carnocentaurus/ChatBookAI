@@ -785,11 +785,9 @@ async def startup_event():
         print(f"❌ Error initializing embeddings/db: {e}")
 
 
-'''
 @app.get("/")
 async def root():
     return {"status": "Server is running!", "message": "Hello from Render"}
-'''
 
 
 # This route shows a public report of chatbot performance
