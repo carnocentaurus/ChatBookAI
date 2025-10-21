@@ -38,7 +38,7 @@ String getBaseUrl() {
       return "http://127.0.0.1:8000";
     } 
     else if (Platform.isAndroid || Platform.isIOS) {
-      return "http://192.168.1.100:8000";  // Your PC's IP
+      return "http://10.0.15.188:8000";  // PC's local IP
     }
   }
   throw UnsupportedError("Unsupported platform");
