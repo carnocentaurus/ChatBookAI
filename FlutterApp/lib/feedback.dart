@@ -3,14 +3,17 @@
 import 'package:flutter/material.dart';
 import 'main.dart';
 
+// stateful widget since this page’s content (rating, input text, dropdown) changes dynamically
 class FeedbackPage extends StatefulWidget {
   // This stores the chat session ID passed from another page.
   // If removed: You’ll get errors when trying to send feedback linked to a session.
   final String sessionId;
 
+  // Uses const for efficiency since this widget’s configuration doesn’t change
   const FeedbackPage({Key? key, required this.sessionId}) : super(key: key);
 
   @override
+  // Creates the state class _FeedbackPageState, which contains all logic and UI
   State<FeedbackPage> createState() => _FeedbackPageState();
 }
 
@@ -33,9 +36,9 @@ class _FeedbackPageState extends State<FeedbackPage> {
 
   @override
   Widget build(BuildContext context) {
+    // Allows scrolling if the keyboard covers part of the form.
+    // If removed: The keyboard might block the input or submit button.
     return SingleChildScrollView(
-      // Allows scrolling if the keyboard covers part of the form.
-      // If removed: The keyboard might block the input or submit button.
       padding: EdgeInsets.only(
         bottom: MediaQuery.of(context).viewInsets.bottom, // Keeps space for keyboard
         left: 16,
@@ -45,13 +48,13 @@ class _FeedbackPageState extends State<FeedbackPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ⭐ Rating Section
+          // Rating Section
           Text("How would you rate your experience?"),
           SizedBox(height: 10),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: List.generate(5, (index) {
-              return GestureDetector(
+              return GestureDetector( // lets users tap a star
                 onTap: () {
                   // Changes the star rating when tapped
                   setState(() {
@@ -71,7 +74,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
           ),
           SizedBox(height: 15),
 
-          // 📝 Feedback Text Input
+          // Feedback Text Input
           Text("Your feedback:"),
           SizedBox(height: 8),
           TextField(
@@ -85,7 +88,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
           ),
           SizedBox(height: 15),
 
-          // 👤 User Type Dropdown
+          // User Type Dropdown
           Text("You are a:"),
           SizedBox(height: 8),
           DropdownButton<String>(
@@ -101,7 +104,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
           ),
           SizedBox(height: 20),
 
-          // 📤 Submit Button
+          // Submit Button
           Align(
             alignment: Alignment.centerRight,
             child: ElevatedButton(
@@ -126,7 +129,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
                   widget.sessionId,
                 );
 
-                // ✅ Shows success or error message at bottom
+                // Shows success or error message at bottom
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text(result["message"]),
