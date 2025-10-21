@@ -27,15 +27,7 @@ void main() { // The entry point of every Flutter app. Execution starts here.
 
 
 String getBaseUrl() {
-  if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-    return "http://127.0.0.1:8000"; // For desktop testing
-  } 
-  else if (Platform.isAndroid || Platform.isIOS) {
-    return "http://10.52.56.213:8000"; // Your PC's Wi-Fi IP
-  } 
-  else {
-    throw UnsupportedError("Unsupported platform");
-  }
+  return "https://chatbookai-render-2.onrender.com";
 }
 
 
