@@ -45,6 +45,22 @@ String getBaseUrl() {
 }
 
 
+Future<bool> isServerReady() async {
+  try {
+    final response = await http.get(
+      Uri.parse("${getBaseUrl()}/health")
+    );
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return data['status'] == 'healthy';
+    }
+  } catch (e) {
+    return false;
+  }
+  return false;
+}
+
+
 // Creates a unique identifier for each app session by using the current timestamp in milliseconds.  
 String _sessionId = DateTime.now().millisecondsSinceEpoch.toString();
 
