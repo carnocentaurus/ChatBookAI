@@ -785,9 +785,10 @@ async def startup_event():
         print(f"❌ Error initializing embeddings/db: {e}")
 
 
-@app.get("/")
+# Support HEAD requests for UptimeRobot monitoring
+@app.api_route("/", methods=["GET", "HEAD"])
 async def root():
-    return {"status": "Server is running!", "message": "Hello from Render"}
+    return {"status": "ChatBook AI is running"}
 
 
 # This route shows a public report of chatbot performance
