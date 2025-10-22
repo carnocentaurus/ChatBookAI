@@ -654,60 +654,79 @@ def log_query(query_text: str, answer_text: str, answered_flag: bool, chunks_fou
 
 
 def load_embeddings_and_db():
-    """Loads the AI’s memory (embeddings) and database. Creates new ones if missing."""
+    """Load embeddings and database with memory optimization"""
     try:
-        # Loads a model that turns text into numbers so the AI can compare meanings
-        embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+        import os
+        import gc  # Garbage collector
+        
+        # Use a lighter embedding model
+        embeddings = HuggingFaceEmbeddings(
+            model_name="sentence-transformers/all-MiniLM-L6-v2",
+            model_kwargs={'device': 'cpu'},  # Force CPU
+            encode_kwargs={'normalize_embeddings': True, 'batch_size': 8}  # Smaller batches
+        )
         print("✅ Embeddings model loaded")
         
-        db_path = "data/chroma_db"  # where the database will be stored
+        db_path = "data/chroma_db"
         
-        # Checks if a database already exists
+        # Check if database exists
         if os.path.exists(db_path) and os.listdir(db_path):
             print("📂 Loading existing Chroma database...")
-            db = Chroma(persist_directory=db_path, embedding_function=embeddings)  # loads saved data
+            db = Chroma(
+                persist_directory=db_path, 
+                embedding_function=embeddings,
+                collection_metadata={"hnsw:space": "cosine"}  # More memory efficient
+            )
         else:
-            print("🔨 Creating new Chroma database (first time)...")
+            print("🔨 Creating new Chroma database...")
             
-            # Makes sure the handbook text is already loaded
             if not HANDBOOK_TEXT:
                 print("❌ Cannot create database: Handbook not loaded")
-                return None, None, None  # stops if no handbook text found
+                return None, None, None
             
-            # Breaks the handbook text into smaller parts
+            # Smaller chunks = less memory
             from langchain.text_splitter import RecursiveCharacterTextSplitter
-            # AI reads better in small sections
             text_splitter = RecursiveCharacterTextSplitter(
-                chunk_size=1000,  # each part has 1000 characters
-                chunk_overlap=200  # overlaps a little so no information is lost
+                chunk_size=800,  # Reduced from 1000
+                chunk_overlap=150  # Reduced from 200
             )
             chunks = text_splitter.split_text(HANDBOOK_TEXT)
-            print(f"📄 Split into {len(chunks)} chunks")  # tells how many pieces were made
+            print(f"📄 Split into {len(chunks)} chunks")
             
-            # Creates a database from the text pieces
-            db = Chroma.from_texts(
-                texts=chunks,             # list of handbook parts
-                embedding=embeddings,     # uses the embeddings model
-                persist_directory=db_path # saves it to a folder
-            )
-            db.persist()  # makes sure it's saved on disk
+            # Process in smaller batches to avoid memory spikes
+            batch_size = 50
+            db = None
+            for i in range(0, len(chunks), batch_size):
+                batch = chunks[i:i+batch_size]
+                if db is None:
+                    db = Chroma.from_texts(
+                        texts=batch,
+                        embedding=embeddings,
+                        persist_directory=db_path
+                    )
+                else:
+                    db.add_texts(batch)
+                print(f"💾 Processed {min(i+batch_size, len(chunks))}/{len(chunks)} chunks")
+                gc.collect()  # Free memory
+            
+            db.persist()
             print("💾 Database created and saved")
         
-        # Creates a retriever — lets the AI look up related handbook info when asked
+        # Create retriever with smaller k to use less memory
         retriever = db.as_retriever(
-            # Maximal Marginal Relevance
-            search_type="mmr", # Finds results that are relevant to the query But also diverse
-            search_kwargs={"k": 15, "fetch_k": 35, "lambda_mult": 0.5}
+            search_type="mmr", 
+            search_kwargs={"k": 10, "fetch_k": 25, "lambda_mult": 0.5}  # Reduced from 15/35
         )
         
-        print("✅ Database and retriever ready")  # everything worked
-        return embeddings, db, retriever  # returns all ready-to-use parts
+        print("✅ Database and retriever ready")
+        gc.collect()  # Final cleanup
+        return embeddings, db, retriever
     
     except Exception as e:
-        print(f"💥 Database loading error: {e}")  # if something fails
+        print(f"💥 Database loading error: {e}")
         import traceback
-        traceback.print_exc()  # shows detailed error info
-        return None, None, None  # returns nothing if there’s a problem
+        traceback.print_exc()
+        return None, None, None
 
 
 def load_handbook():
@@ -783,6 +802,20 @@ async def startup_event():
         # If something breaks, clear the variables and show error
         embeddings, db, retriever = None, None, None
         print(f"❌ Error initializing embeddings/db: {e}")
+
+
+
+@app.get("/health")
+async def health_check():
+    """Check if all resources are loaded"""
+    return {
+        "status": "healthy" if all([HANDBOOK_TEXT, embeddings, db, retriever]) else "loading",
+        "handbook_loaded": bool(HANDBOOK_TEXT),
+        "handbook_size": len(HANDBOOK_TEXT) if HANDBOOK_TEXT else 0,
+        "embeddings_ready": embeddings is not None,
+        "db_ready": db is not None,
+        "retriever_ready": retriever is not None
+    }
 
 
 # Support HEAD requests for UptimeRobot monitoring
