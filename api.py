@@ -343,8 +343,53 @@ class ChatbotMemory:
             return ""
         
 
+class ResponseCache:  # A class that stores and retrieves saved answers
+    def __init__(self):  # This runs when the class is created
+        self.cache_file = "data/response_cache.json"  # File where saved answers are kept
+        self.cache = self.load_cache()  # Load any saved data from the file
+    
+    def load_cache(self) -> Dict:  # Load saved answers from the file
+        try:  # Try to open the file safely
+            if os.path.exists(self.cache_file):  # Check if the file exists
+                with open(self.cache_file, 'r', encoding='utf-8') as f:  # Open the file for reading
+                    return json.load(f)  # Read and convert the file content into usable data
+        except Exception as e:  # If something goes wrong
+            print(f"Error loading cache: {e}")  # Show what went wrong
+        return {}  # Return an empty list if loading fails
+    
+    def save_cache(self):  # Save the current data back to the file
+        try:  # Try to write safely
+            os.makedirs(os.path.dirname(self.cache_file), exist_ok=True)  # Make sure the folder exists
+            with open(self.cache_file, 'w', encoding='utf-8') as f:  # Open the file for writing
+                json.dump(self.cache, f, indent=2, ensure_ascii=False)  # Save the data neatly into the file
+        except Exception as e:  # If something goes wrong while saving
+            print(f"Error saving cache: {e}")  # Show what went wrong
+    
+    def get_cached_response(self, category: str) -> Optional[str]:  # Get a full saved answer by its topic
+        """Get cached response for a category"""
+        return self.cache.get(category)  # Return the stored data for that topic if it exists
+    
+    def set_cached_response(self, category: str, response: str):  # Save a new answer for a topic
+        """Cache a response for a category"""
+        self.cache[category] = {  # Create a new record for the topic
+            'response': sanitize_text(response),  # Store a clean version of the answer
+            'cached_at': datetime.now().isoformat()  # Record the time it was saved
+        }
+        self.save_cache()  # Save all updates to the file
+    
+    def get_response_text(self, category: str) -> Optional[str]:  # Get only the text of a saved answer
+        """Get just the response text"""
+        cached = self.cache.get(category)  # Look for the topic in stored data
+        if cached:  # If found
+            return cached.get('response')  # Give back only the answer text
+        return None  # If not found, return nothing
+
+
 # Initialize memory system
 memory = ChatbotMemory()
+
+# Initialize response cache
+response_cache = ResponseCache()
 
 # Setup admin routes (this adds all admin endpoints)
 setup_admin_routes(app, memory, LOG_FILE, MEMORY_DB)
@@ -750,7 +795,48 @@ def load_handbook():
         import traceback
         traceback.print_exc()
         return ""
+
+
+def normalize_query(query: str) -> str:  # Define a function that cleans up and standardizes the user’s question
+    """Normalize queries to catch similar questions"""
+    query_lower = query.lower().strip()  # Make the text lowercase and remove extra spaces
     
+    # Remove common question words and punctuation
+    question_words = ['what', 'is', 'the', 'are', 'can', 'you', 'tell', 'me', 'about', 'whats', "what's"]  # Words we want to ignore
+    words = query_lower.split()  # Split the question into individual words
+    normalized_words = [w.strip('?.,!') for w in words if w.strip('?.,!') not in question_words]  # Remove extra symbols and skip unwanted words
+    
+    # Sort words alphabetically to catch reordered queries
+    normalized = ' '.join(sorted(normalized_words))  # Arrange words in order and join them back into one line
+    
+    return normalized  # Return the cleaned-up version of the question
+
+
+def get_query_category(query: str) -> Optional[str]:  # Define a function that assigns a category to a question
+    """Categorize queries to ensure consistent responses"""
+    query_lower = query.lower()  # Make the question lowercase for easier checking
+    
+    # Define query categories with their keywords
+    categories = {  # Groups of words that represent common topics
+        'vision': ['vision'],
+        'mission': ['mission'],
+        'core_values': ['core value', 'values', 'principle'],
+        'history': ['founded', 'history', 'established', 'began'],
+        'admission': ['admission', 'enroll', 'apply', 'application'],
+        'tuition': ['tuition', 'fee', 'cost', 'payment', 'price'],
+        'scholarship': ['scholarship', 'financial aid', 'grant'],
+        'grading': ['grade', 'grading system', 'gpa', 'mark'],
+        'president': ['president', 'head', 'leader'],
+        'location': ['location', 'address', 'where located', 'campus'],
+    }
+    
+    # Check which category the query belongs to
+    for category, keywords in categories.items():  # Go through each category and its related words
+        if any(keyword in query_lower for keyword in keywords):  # If a keyword is found in the question
+            return category  # Return the matching category name
+    
+    return None  # If no keywords match, return nothing
+
 
 # Runs automatically when the server starts
 @app.on_event("startup")
@@ -925,65 +1011,139 @@ def traced_context(docs, query, session_id):
     return build_context_with_memory(text_chunks, query, session_id)
 
 
-@app.post("/chat")
-async def chat(request: Request): # request = user query
-    """Main chat endpoint that handles student questions"""
-    global retriever, HANDBOOK_TEXT, model # allows this function to access global variables
-    start_time = time.time() # Record start time to measure how long the chatbot takes to respond
+@app.post("/chat")  
+# This sets up a route so the app can handle chat requests sent to "/chat"
+async def chat(request: Request):  
+    """Main chat endpoint that handles student questions"""  
     
-    try:
-        # Check if the AI model is set up
-        if not model:
+    global retriever, HANDBOOK_TEXT, model, response_cache  
+    # These are shared variables used by the chat system
+    
+    start_time = time.time()  
+    # Record the time when the chat request started (used for timeout)
+    
+    try:  
+        # Try to run the chat process; if something goes wrong, go to 'except'
+        
+        if not model:  
+            # If the model is missing, show an error message
             return {"answer": "Gemini API is not configured."}
         
-        # Get the student’s message and session info
-        data = await request.json()
-        query = data.get("query", "").strip()
-        session_id = data.get("session_id", "default_session")
+        data = await request.json()  
+        # Get the incoming data from the user's chat request
+        query = data.get("query", "").strip()  
+        # Take the user’s question and remove extra spaces
+        session_id = data.get("session_id", "default_session")  
+        # Use the given session ID, or make a default one if missing
         
-        # Return a message if no question was provided
-        if not query:
+        if not query:  
+            # If the user didn’t type anything
             return {"answer": "Please ask a question."}
         
-        # Make sure a chat session exists (for memory)
-        memory.get_or_create_session(session_id)
-        print(f"🔍 Processing query: {query} [Session: {session_id}]")
+        memory.get_or_create_session(session_id)  
+        # Start or load a memory session for this chat
+        print(f"🔍 Processing query: {query} [Session: {session_id}]")  
+        # Show in the console which question is being processed
+        
+        # Check if this is a follow-up question
+        recent_conversations = memory.get_recent_conversations(session_id, limit=2)  
+        # Get the last 2 messages in this chat
+        query_lower = query.lower()  
+        # Convert the question to lowercase for easier checking
+        follow_up_indicators = [  
+            # Common words that might mean the question is a follow-up
+            'what', 'when', 'where', 'who', 'which', 'how',
+            'that', 'this', 'those', 'these', 'it', 'they',
+            'year', 'date', 'time', 'place', 'person', 'name'
+        ]
+        is_followup = (  
+            # Decide if the message is likely a follow-up
+            len(query.split()) <= 5 and  
+            any(indicator in query_lower for indicator in follow_up_indicators) and  
+            recent_conversations  
+        )
+        
+        # For follow-up questions, process normally (don’t use cache)
+        if is_followup:  
+            print("📝 Detected follow-up question, using conversation context")  
+            # Print that it’s a follow-up
+        else:  
+            # Otherwise, check if this question fits a known category
+            category = get_query_category(query)
+            
+            if category:  
+                # If there’s a known category
+                # Try to use a saved answer from cache
+                cached_response = response_cache.get_response_text(category)
+                
+                if cached_response:  
+                    # If there’s a stored response for this topic
+                    print(f"✅ Using cached response for category: {category}")
+                    memory.add_conversation(session_id, query, cached_response, "")  
+                    # Save the chat to memory
+                    await asyncio.get_event_loop().run_in_executor(
+                        executor, log_query, query, cached_response, True, 0  
+                    )
+                    # Log the question and answer in the background
+                    return {"answer": cached_response, "session_id": session_id}  
+                    # Send the saved answer right away
         
         # Timeout protection
-        if time.time() - start_time > 18:
+        if time.time() - start_time > 18:  
+            # If it’s taking too long, return an error
             return {"answer": "Please check your internet connection and try again."}
         
         # Step 1: Find related handbook sections
-        docs = await traced_retrieval(query, retriever, HANDBOOK_TEXT)
-        chunks_found = len(docs)
+        # For categorized queries, use more specific retrieval
+        category = get_query_category(query)  
+        # Check again if the question belongs to a category
+        if category and not is_followup:  
+            # If it’s a categorized question and not a follow-up
+            expanded_query = f"{query} {category.replace('_', ' ')}"  
+            # Add the category to make the search clearer
+            docs = await traced_retrieval(expanded_query, retriever, HANDBOOK_TEXT)  
+            # Look up matching handbook sections
+        else:  
+            # Otherwise, just search using the question alone
+            docs = await traced_retrieval(query, retriever, HANDBOOK_TEXT)
         
-        # Timeout check again
-        if time.time() - start_time > 18:
+        chunks_found = len(docs)  
+        # Count how many text parts were found
+        
+        if time.time() - start_time > 18:  
+            # Stop if it’s taking too long again
             return {"answer": "Please check your internet connection and try again."}
         
-        # If no related text found in handbook
-        if not docs:
+        if not docs:  
+            # If nothing was found in the handbook
             no_answer_msg = "I couldn't find relevant information in the handbook for your question."
-            memory.add_conversation(session_id, query, no_answer_msg) # Save this failed search into the chatbot’s memory
+            memory.add_conversation(session_id, query, no_answer_msg)  
+            # Save that there was no answer
             await asyncio.get_event_loop().run_in_executor(
-                executor, log_query, query, no_answer_msg, False, 0
+                executor, log_query, query, no_answer_msg, False, 0  
             )
-            return {"answer": no_answer_msg} # Send the “no information found” message back to the user
+            # Log that the answer failed
+            return {"answer": no_answer_msg}  
+            # Return message saying nothing was found
         
         # Step 2: Build the context for the model
-        context = traced_context(docs, query, session_id)
-        clean_context = sanitize_text(context)
-        clean_query = sanitize_text(query)
+        context = traced_context(docs, query, session_id)  
+        # Create a combined text with the handbook info
+        clean_context = sanitize_text(context)  
+        # Remove unwanted characters from context
+        clean_query = sanitize_text(query)  
+        # Clean up the question text too
         
-        # Step 3: Create the model’s prompt
-        # Step 3: Create the model's prompt
-        prompt_parts = [
+        # Step 3: Create the model's prompt with consistency instructions
+        prompt_parts = [  
+            # Instructions to help the model answer consistently and clearly
             "You are a GSU student handbook assistant. Provide a focused, direct answer to the student's question.",
             "",
             "IMPORTANT INSTRUCTIONS:",
             "- If the question is a follow-up (like 'what year?' or 'when was that?'), refer to the PREVIOUS CONVERSATION section",
             "- For follow-up questions, answer based ONLY on what was discussed in the previous conversation",
-            "- DO NOT search the handbook for new information if the question is clearly asking about something just mentioned",
+            "- For standard handbook questions (vision, mission, values, etc.), provide the COMPLETE official information",
+            "- Be CONSISTENT: the same question should always get the same answer",
             "- Always prioritize ADDITIONAL INFORMATION over handbook information when they conflict",
             "- Be concise but complete",
             "- Use structured formatting for lists/numbers/categories",
@@ -995,34 +1155,49 @@ async def chat(request: Request): # request = user query
             "",
             "Direct Answer:"
         ]
-        clean_prompt = sanitize_text("\n".join(prompt_parts))
-        if len(clean_prompt) > 30000:
-            clean_prompt = clean_prompt[:30000] + "..." # gets cut down to 30,000 characters
+        clean_prompt = sanitize_text("\n".join(prompt_parts))  
+        # Turn the list into a single clean text block
+        if len(clean_prompt) > 30000:  
+            # If it’s too long, cut it down
+            clean_prompt = clean_prompt[:30000] + "..."
         
         # Step 4: Run the model and track it with LangSmith
         response_text, run_id = await run_chat_pipeline(
-            clean_query, clean_context, clean_prompt, executor, model
+            clean_query, clean_context, clean_prompt, executor, model  
         )
-
-        # Store trace ID for this chat session
-        if run_id:
+        # Run the AI model and get the answer
+        
+        if run_id:  
+            # If tracking worked, save the run ID
             last_run_ids[session_id] = run_id
             print(f"🔗 Stored run_id {run_id} for session {session_id}")
         
-        # Step 5: Clean and finalize the model’s answer
-        raw_answer = response_text
-        answer = sanitize_text(raw_answer)
-        if not answer:
+        # Step 5: Clean and finalize the model's answer
+        raw_answer = response_text  
+        # Get the model's raw output
+        answer = sanitize_text(raw_answer)  
+        # Clean it up
+        if not answer:  
+            # If it’s empty, show a fallback message
             answer = "I couldn't generate a proper response. Please try rephrasing your question."
-        print(f"✅ Answer generated successfully ({len(answer)} characters)")
+        print(f"✅ Answer generated successfully ({len(answer)} characters)")  
+        # Show success message in console
+        
+        # Cache the response if it's a categorized query and not a follow-up
+        if category and not is_followup:  
+            # Save this answer for future use
+            response_cache.set_cached_response(category, answer)
+            print(f"💾 Cached response for category: {category}")
         
         # Save question and answer to memory
-        # Take only the first 200 characters of clean_context
         memory.add_conversation(session_id, query, answer, clean_context[:200])
+        # Store this conversation in memory
         
         # Step 6: Check if the response was complete or unclear
-        answered = True
-        unclear_phrases = [
+        answered = True  
+        # Assume it’s a clear answer
+        unclear_phrases = [  
+            # Phrases that mean the answer might not be clear or complete
             "does not specify","not specified","doesn't specify","not mentioned",
             "not provided","doesn't mention","no information","not available",
             "not found","not included","doesn't include","not detailed",
@@ -1032,93 +1207,38 @@ async def chat(request: Request): # request = user query
             "is not available","are not available","not accessible",
             "couldn't find","error","technical difficulties","try again"
         ]
-        if not answer.strip() or any(p in answer.lower() for p in unclear_phrases):
+        if not answer.strip() or any(p in answer.lower() for p in unclear_phrases):  
+            # Mark as unanswered if any unclear phrase appears
             answered = False
         
-        # Step 7: Log everything (query, answer, etc.)
+        # Step 7: Log everything
         await asyncio.get_event_loop().run_in_executor(
-            executor, log_query, query, answer, answered, chunks_found
+            executor, log_query, query, answer, answered, chunks_found  
         )
+        # Save the chat log in the background
         
-        # Return the final response
-        return {"answer": answer, "session_id": session_id}
+        return {"answer": answer, "session_id": session_id}  
+        # Send the final answer back to the user
     
-    except Exception as e:
-        # Handles any unexpected system error
-        print(f"❌ Unexpected error: {repr(e)}")
+    except Exception as e:  
+        # Catch any unexpected errors
+        print(f"❌ Unexpected error: {repr(e)}")  
+        # Show the error in the console
         error_msg = "Please check your internet connection and try again." if time.time() - start_time > 20 \
             else "I encountered an unexpected error. Please try again or contact support."
+        # Use different error messages based on time
         
-        # Try saving this failed attempt in the log
-        try:
+        try:  
+            # Try to still save the error message to memory
             session_id = data.get("session_id", "default_session")
             query = data.get("query", "")
             memory.add_conversation(session_id, query, error_msg)
             await asyncio.get_event_loop().run_in_executor(
                 executor, log_query, query, error_msg, False, 0
             )
-        except:
+        except:  
+            # Ignore if saving fails too
             pass
         
-        return {"answer": error_msg}
-
-
-@app.post("/feedback")
-async def submit_feedback(feedback: FeedbackSubmission):
-    """Handles feedback from users"""
-    try:
-        # make sure the “data” folder exists
-        os.makedirs("data", exist_ok=True)
-        
-        # check if feedback.csv already exists
-        file_exists = os.path.isfile(FEEDBACK_FILE)
-        
-        # open the CSV file and prepare to add feedback
-        with open(FEEDBACK_FILE, "a", newline="", encoding="utf-8") as csvfile:
-            fieldnames = ["timestamp", "feedback_text", "rating", "user_type", "session_id"]
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-
-            # write column names if file is new
-            if not file_exists:
-                writer.writeheader()
-
-            # add new feedback entry
-            writer.writerow({
-                "timestamp": datetime.now().isoformat(),             # current date and time
-                "feedback_text": sanitize_text(feedback.feedback_text), # cleaned feedback text
-                "rating": feedback.rating,                           # user’s rating (1–5)
-                "user_type": feedback.user_type,                     # who gave it (student, admin, etc.)
-                "session_id": feedback.session_id                    # which chat session it came from
-            })
-        
-        # also try sending feedback to LangSmith (for monitoring)
-        try:
-            feedback_data = {
-                "feedback_text": sanitize_text(feedback.feedback_text), # cleaned text again
-                "rating": feedback.rating,
-                "normalized_score": feedback.rating / 5.0,              # turns score into 0–1 scale
-                "user_type": feedback.user_type,
-                "session_id": feedback.session_id,
-                "timestamp": datetime.now().isoformat()
-            }
-            
-            # simple helper to record feedback activity
-            from langsmith import traceable # a tool for observing, debugging, and improving AI apps
-            @traceable(name="user_feedback_submission") # When this function runs, record its activity in LangSmith under this name
-            def log_feedback_event(data):
-                return {"status": "feedback_logged", "data": data}
-            
-            log_feedback_event(feedback_data)  # send feedback data to LangSmith
-            print(f"✅ Feedback logged to LangSmith: {feedback.rating}/5 stars")
-            
-        except Exception as ls_err:
-            # if feedback can’t be sent online, just show a warning
-            print(f"⚠️ Could not send feedback to LangSmith: {ls_err}")
-        
-        print(f"✅ Feedback saved locally: {feedback.rating}/5 stars")
-        return {"message": "Feedback submitted successfully", "status": "success"}
-    
-    except Exception as e:
-        # show error if saving feedback fails
-        print(f"❌ Error saving feedback: {e}")
-        return {"message": "Error submitting feedback", "status": "error"}
+        return {"answer": error_msg}  
+        # Return the error message to the user
