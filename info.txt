@@ -13,8 +13,6 @@ next:
 1. find a way to start system without manually running uvicorn
 2. find a way to access admin panel in other devices
 3. make the system apk work on phone
-4. improve chatbot query reading capabilities
-5. improve chatbot memory (read past convos)
 
 possible future features:
 1. add search/filter functionality to manage queries
