@@ -286,61 +286,37 @@ class ChatbotMemory:
     # Get recent conversations for context
     def get_recent_conversations(self, session_id: str, limit: int = 3) -> List[Dict]:
         try:
-            conn = sqlite3.connect(MEMORY_DB)  # Connect to DB
-            cursor = conn.cursor()
-            
-            clean_session_id = sanitize_text(session_id)  # Clean session ID
-            
-            # Get most recent conversations for this session
+            conn = sqlite3.connect(MEMORY_DB) # # Connect to the SQLite memory database
+            cursor = conn.cursor() # # Create a cursor to execute SQL commands
+        
+            clean_session_id = sanitize_text(session_id) # Clean the session ID to prevent invalid characters or SQL issues
+        
             cursor.execute('''
                 SELECT user_message, bot_response, timestamp
-                FROM conversations
-                WHERE session_id = ?
-                ORDER BY timestamp DESC
-                LIMIT ?
-            ''', (clean_session_id, limit))
+                FROM conversations # From the 'conversations' table
+                WHERE session_id = ? # Filter by the given session ID
+                ORDER BY timestamp DESC # Sort by newest messages first
+                LIMIT ? # Limit the number of results (default is 3)
+            ''', (clean_session_id, limit))  # Pass the session ID and limit as safe parameters
+        
+            conversations = [] # Empty list to store retrieved messages
+            for row in cursor.fetchall(): # Loop through each database row returned
+                user_msg = sanitize_text(row[0]) if row[0] else "" # Clean the user message (or blank if None)
+                bot_msg = sanitize_text(row[1]) if row[1] else ""
             
-            conversations = []  # later used by the bot to recall relevant past replies
-
-            for row in cursor.fetchall():  # Loop through retrieved rows
-                user_msg = sanitize_text(row[0]) if row[0] else ""  # Clean user message
-                bot_msg = sanitize_text(row[1]) if row[1] else ""   # Clean bot response
-                
-                # Shorten long text so logs are easier to read
-                conversations.append({
-                    'user_message': user_msg[:50] + "..." if len(user_msg) > 50 else user_msg,
-                    'bot_response': bot_msg[:100] + "..." if len(bot_msg) > 100 else bot_msg,
+                # Return FULL messages for context, not truncated
+                conversations.append({ # Add this conversation to the list
+                    'user_message': user_msg,
+                    'bot_response': bot_msg,
                     'timestamp': row[2]
                 })
-            
-            conn.close()  # Close DB
-            return list(reversed(conversations))  # Return in chronological order
-            
+        
+            conn.close() # Close the database connection to free resources
+            return list(reversed(conversations)) # Reverse order to make it chronological (oldest to newest)
+        
         except Exception as e:
             print(f"❌ Error retrieving conversations: {e}")
-            return []  # Return empty list if error
-        
-
-    def add_custom_info(self, topic: str, information: str):
-        """Add custom information with sanitization"""
-        try:
-            clean_topic = sanitize_text(topic)  # Clean topic
-            clean_info = sanitize_text(information)  # Clean info
-            
-            # Unique ID: topic + number
-            info_id = f"{clean_topic.lower().replace(' ', '_')}_{len(self.custom_info) + 1}"
-            
-            # Save custom info in memory
-            self.custom_info[info_id] = {
-                'topic': clean_topic,
-                'information': clean_info,
-                'added_at': datetime.now().isoformat()
-            }
-            self.save_custom_info()  # Save to file
-            print(f"✅ Added custom info for: {clean_topic}")
-            
-        except Exception as e:
-            print(f"❌ Error adding custom info: {e}")
+            return []
 
 
     # checks if the user’s question relates to any of the custom information stored by an admin.
@@ -483,102 +459,109 @@ async def smart_retrieval(query, retriever, handbook_text):
 
 # Build context including memory and custom info (minimal conversation history)
 # contex = the information the chatbot gives the AI model before it generates an answer
-def build_context_with_memory(docs, query, session_id, max_length=8000):
-    # List to hold all different parts of the context (history, custom info, handbook)
-    context_parts = []
+def build_context_with_memory(docs, query, session_id, max_length=8000):  # Builds the full context (conversation + custom info + handbook)
+    context_parts = []  # Holds all context sections to send to the chatbot
     
-    # === 1. Add minimal conversation history (only if directly relevant) ===
-    recent_conversations = memory.get_recent_conversations(session_id, limit=2)  # Get last 2 convos for this session
-    if recent_conversations:
-        # Lowercase query for easier keyword matching
-        query_lower = query.lower()
-        relevant_history = []  # Will store conversations relevant to current query
+    # === 1. Add recent conversation history (ALWAYS include for follow-ups) ===
+    recent_conversations = memory.get_recent_conversations(session_id, limit=3)  # Get the last 3 conversations from memory
+    if recent_conversations:  # Continue only if there’s any conversation history
+        query_lower = query.lower()  # Convert query to lowercase for easy matching
         
-        # Check if user query words appear in previous messages or responses
-        for conv in recent_conversations:
-            if (any(word in conv['user_message'].lower() for word in query_lower.split()) or 
-                any(word in conv['bot_response'].lower() for word in query_lower.split())):
-                relevant_history.append(conv)  # Keep only relevant conversations
+        # Detect if this is a follow-up question (contains pronouns or short reference words)
+        follow_up_indicators = [  # Common words that indicate a follow-up or reference question
+            'what', 'when', 'where', 'who', 'which', 'how',
+            'that', 'this', 'those', 'these', 'it', 'they',
+            'year', 'date', 'time', 'place', 'person', 'name'
+        ]
         
-        # If relevant history exists, add it to context
-        if relevant_history:
-            history = "RELEVANT CONTEXT:\n"
-            for conv in relevant_history[-1:]:  # Take only the most recent relevant conversation
-                # Clean the conversation text before storing
-                clean_user_msg = sanitize_text(conv['user_message'])
-                history += f"Previous: {clean_user_msg}\n"
-            context_parts.append(history)  # Add conversation history to context
+        is_followup = (  # Check if the user’s question seems like a follow-up
+            len(query.split()) <= 5 or  # Very short question → likely follow-up
+            any(indicator in query_lower for indicator in follow_up_indicators)  # Contains a reference word
+        )
+        
+        if is_followup and recent_conversations:  # If it's a follow-up, use recent chat context
+            history = "PREVIOUS CONVERSATION (Use this to understand context for short/follow-up questions):\n"  # Header label
+            for i, conv in enumerate(recent_conversations[-2:], 1):  # Include last 2 conversations
+                clean_user_msg = sanitize_text(conv['user_message'])  # Clean user message
+                clean_bot_msg = sanitize_text(conv['bot_response'])  # Clean chatbot reply
+                history += f"\nQ{i}: {clean_user_msg}\n"  # Add cleaned user message
+                history += f"A{i}: {clean_bot_msg}\n"  # Add cleaned chatbot reply
+            context_parts.append(history)  # Add the history section to the context list
+        
+        elif recent_conversations:  # If not a follow-up, include only relevant past messages
+            query_lower = query.lower()  # Convert query to lowercase again
+            relevant_history = []  # Stores matching previous conversations
+            
+            for conv in recent_conversations:  # Go through each past message
+                if (any(word in conv['user_message'].lower() for word in query_lower.split()) or  # Match words in user messages
+                    any(word in conv['bot_response'].lower() for word in query_lower.split())):  # Or match words in bot responses
+                    relevant_history.append(conv)  # Add to relevant list if matched
+            
+            if relevant_history:  # If any relevant conversation was found
+                history = "RELEVANT PREVIOUS CONTEXT:\n"  # Header label for relevant history
+                for conv in relevant_history[-1:]:  # Include only the most recent relevant exchange
+                    clean_user_msg = sanitize_text(conv['user_message'])  # Clean user text
+                    clean_bot_msg = sanitize_text(conv['bot_response'])  # Clean bot reply
+                    history += f"Previous Q: {clean_user_msg}\n"  # Add previous question
+                    history += f"Previous A: {clean_bot_msg}\n"  # Add previous answer
+                context_parts.append(history)  # Add relevant conversation section
     
     # === 2. Add custom user information ===
-    custom_info = memory.get_relevant_custom_info(query)  # Look for user-provided info related to query
-    if custom_info:
-        clean_custom_info = sanitize_text(custom_info)  # Clean it before use
-        context_parts.append(f"ADDITIONAL INFORMATION:\n{clean_custom_info}\n")
+    custom_info = memory.get_relevant_custom_info(query)  # Look for extra info added by admins related to query
+    if custom_info:  # If such info exists
+        clean_custom_info = sanitize_text(custom_info)  # Clean the info text
+        context_parts.append(f"ADDITIONAL INFORMATION:\n{clean_custom_info}\n")  # Add labeled custom info section
     
     # === 3. Add handbook context from retrieved documents ===
-    if docs:
-        keywords = extract_keywords(query)  # Extract keywords for scoring
-        scored_docs = []  # Will hold (doc, score) pairs
+    if docs:  # If retrieved handbook sections exist
+        keywords = extract_keywords(query)  # Extract key terms from the query
+        scored_docs = []  # List to store (document, score) pairs
         
-        # Score each retrieved document
-        for doc in docs:
-            clean_content = sanitize_text(doc.page_content)  # Clean text content
-            content_lower = clean_content.lower()
-            score = 0
+        for doc in docs:  # Go through each retrieved handbook chunk
+            clean_content = sanitize_text(doc.page_content)  # Clean the chunk text
+            content_lower = clean_content.lower()  # Convert to lowercase for comparison
+            score = 0  # Initialize document relevance score
             
-            # Strong score boost if full query is present
-            if query.lower() in content_lower:
-                score += 30
+            if query.lower() in content_lower:  # If full query appears in this text
+                score += 30  # Strongly increase score
             
-            # Moderate boost for keyword matches
-            for keyword in keywords:
-                if keyword in content_lower:
-                    score += len(keyword) + 5  # Longer keyword = more weight
+            for keyword in keywords:  # Check all extracted keywords
+                if keyword in content_lower:  # If keyword appears
+                    score += len(keyword) + 5  # Add score based on keyword length
             
-            # Save the document with its score
-            clean_doc = Document(page_content=clean_content, metadata=doc.metadata)
-            scored_docs.append((clean_doc, score))
+            clean_doc = Document(page_content=clean_content, metadata=doc.metadata)  # Create a clean document object
+            scored_docs.append((clean_doc, score))  # Store doc and its score
         
-        # Sort documents by score (highest first)
-        scored_docs.sort(key=lambda x: x[1], reverse=True)
+        scored_docs.sort(key=lambda x: x[1], reverse=True)  # Sort all documents from most to least relevant
         
-        handbook_context = "HANDBOOK INFORMATION:\n"  # Label for handbook section
-        # Track how much text is already in context (avoid exceeding max_length)
-        current_length = sum(len(part) for part in context_parts)
+        handbook_context = "HANDBOOK INFORMATION:\n"  # Header for handbook data
+        current_length = sum(len(part) for part in context_parts)  # Track total current length of context text
         
-        # Add top scored handbook sections until space runs out
-        for i, (doc, score) in enumerate(scored_docs):
-            chunk_text = doc.page_content.strip()  # Clean up whitespace
-            remaining = max_length - current_length - len(handbook_context)  # Remaining budget
+        for i, (doc, score) in enumerate(scored_docs):  # Loop through sorted documents
+            chunk_text = doc.page_content.strip()  # Remove leading/trailing spaces
+            remaining = max_length - current_length - len(handbook_context)  # Calculate remaining allowed length
             
-            # Stop if context is nearly full
-            if remaining < 200:
+            if remaining < 200:  # Stop adding if not enough space left
                 break
             
-            # Truncate if text chunk is too long
-            if len(chunk_text) > remaining:
-                sentences = chunk_text.split('.')  # Split into sentences
-                truncated = ""
-                for sentence in sentences:
-                    # Add sentence if it fits within remaining space
-                    if len(truncated + sentence + '.') <= remaining - 50:
+            if len(chunk_text) > remaining:  # If this chunk is too long to fit
+                sentences = chunk_text.split('.')  # Split it into sentences
+                truncated = ""  # Create empty string for shortened text
+                for sentence in sentences:  # Add sentences one by one
+                    if len(truncated + sentence + '.') <= remaining - 50:  # Stop if space runs out
                         truncated += sentence + '.'
                     else:
                         break
-                # Add "..." if truncated
-                chunk_text = truncated + " [...]" if truncated else chunk_text[:remaining-50] + "..."
+                chunk_text = truncated + " [...]" if truncated else chunk_text[:remaining-50] + "..."  # Add ellipsis if cut short
             
-            # Assign relevance label based on score
-            relevance = "HIGH" if score > 20 else "MEDIUM" if score > 10 else "LOW"
-            handbook_context += f"[Section {i+1} - {relevance}]:\n{chunk_text}\n\n"
-            current_length += len(chunk_text) + 50  # Update current length used
+            relevance = "HIGH" if score > 20 else "MEDIUM" if score > 10 else "LOW"  # Assign relevance label
+            handbook_context += f"[Section {i+1} - {relevance}]:\n{chunk_text}\n\n"  # Add labeled section to handbook context
+            current_length += len(chunk_text) + 50  # Update text length used
         
-        # Add handbook info to context
-        context_parts.append(handbook_context)
+        context_parts.append(handbook_context)  # Add the complete handbook context section
     
-    # === 4. Finalize context ===
-    full_context = "\n".join(context_parts)  # Combine all sections into one text
-    return sanitize_text(full_context)  # Return clean, safe context
+    full_context = "\n".join(context_parts)  # Combine all context parts into one big text block
+    return sanitize_text(full_context)  # Clean the final text and return it
 
 
 def log_query(query_text: str, answer_text: str, answered_flag: bool, chunks_found: int):
@@ -993,22 +976,24 @@ async def chat(request: Request): # request = user query
         clean_query = sanitize_text(query)
         
         # Step 3: Create the model’s prompt
+        # Step 3: Create the model's prompt
         prompt_parts = [
             "You are a GSU student handbook assistant. Provide a focused, direct answer to the student's question.",
             "",
             "IMPORTANT INSTRUCTIONS:",
-            "- DO NOT mention previous conversations or greet the user",
-            "- Focus ONLY on answering the current question", 
+            "- If the question is a follow-up (like 'what year?' or 'when was that?'), refer to the PREVIOUS CONVERSATION section",
+            "- For follow-up questions, answer based ONLY on what was discussed in the previous conversation",
+            "- DO NOT search the handbook for new information if the question is clearly asking about something just mentioned",
             "- Always prioritize ADDITIONAL INFORMATION over handbook information when they conflict",
             "- Be concise but complete",
             "- Use structured formatting for lists/numbers/categories",
             "",
-            f"Student Question: {clean_query}",
+            f"Current Question: {clean_query}",
             "",
             "Context:",
             clean_context,
             "",
-            "Direct Answer (use proper formatting for lists and structured content):"
+            "Direct Answer:"
         ]
         clean_prompt = sanitize_text("\n".join(prompt_parts))
         if len(clean_prompt) > 30000:
