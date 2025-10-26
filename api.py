@@ -1242,3 +1242,119 @@ async def chat(request: Request):
         
         return {"answer": error_msg}  
         # Return the error message to the user
+
+
+@app.get("/admin/cache")  # This sets up a route to see all saved answers
+async def view_cache():  # A function to show what’s inside the cache
+    """View all cached responses"""
+    try:  # Try to show the cache safely
+        return {  # Send back the cache information
+            "cache": response_cache.cache,  # All saved answers
+            "total_cached": len(response_cache.cache),  # How many saved answers there are
+            "status": "success"  # Mark the action as successful
+        }
+    except Exception as e:  # If something goes wrong
+        return {  # Send back an error message
+            "message": f"Error viewing cache: {e}",  # What went wrong
+            "status": "error"  # Mark the action as failed
+        }
+
+
+@app.delete("/admin/cache/{category}")  # This route deletes a saved answer for a specific topic
+async def clear_cache_category(category: str):  # The topic to be cleared is given in the link
+    """Clear cached response for a specific category"""
+    try:  # Try to clear the saved answer safely
+        if category in response_cache.cache:  # Check if the topic exists in the saved list
+            del response_cache.cache[category]  # Remove that topic’s saved answer
+            response_cache.save_cache()  # Save the updated list to the file
+            return {  # Send back a success message
+                "message": f"Cache cleared for category: {category}",  # Confirm which topic was cleared
+                "status": "success"  # Mark the action as successful
+            }
+        return {  # If the topic isn’t found in the cache
+            "message": f"No cache found for category: {category}",  # Tell that it doesn’t exist
+            "status": "not_found"  # Mark that nothing was deleted
+        }
+    except Exception as e:  # If something goes wrong
+        return {  # Send back an error message
+            "message": f"Error clearing cache: {e}",  # What went wrong
+            "status": "error"  # Mark the action as failed
+        }
+
+
+@app.delete("/admin/cache")  # This route clears every saved answer at once
+async def clear_all_cache():  # Function to empty the whole cache
+    """Clear all cached responses"""
+    try:  # Try to clear everything safely
+        response_cache.cache = {}  # Empty out all saved answers
+        response_cache.save_cache()  # Save the cleared list to the file
+        return {  # Send back a success message
+            "message": "All cache cleared successfully",  # Confirm everything was cleared
+            "status": "success"  # Mark the action as successful
+        }
+    except Exception as e:  # If something goes wrong
+        return {  # Send back an error message
+            "message": f"Error clearing cache: {e}",  # What went wrong
+            "status": "error"  # Mark the action as failed
+        }
+    
+
+@app.post("/feedback")
+async def submit_feedback(feedback: FeedbackSubmission):
+    """Handles feedback from users"""
+    try:
+        # make sure the â€œdataâ€ folder exists
+        os.makedirs("data", exist_ok=True)
+        
+        # check if feedback.csv already exists
+        file_exists = os.path.isfile(FEEDBACK_FILE)
+        
+        # open the CSV file and prepare to add feedback
+        with open(FEEDBACK_FILE, "a", newline="", encoding="utf-8") as csvfile:
+            fieldnames = ["timestamp", "feedback_text", "rating", "user_type", "session_id"]
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+
+            # write column names if file is new
+            if not file_exists:
+                writer.writeheader()
+
+            # add new feedback entry
+            writer.writerow({
+                "timestamp": datetime.now().isoformat(),             # current date and time
+                "feedback_text": sanitize_text(feedback.feedback_text), # cleaned feedback text
+                "rating": feedback.rating,                           # userâ€™s rating (1â€“5)
+                "user_type": feedback.user_type,                     # who gave it (student, admin, etc.)
+                "session_id": feedback.session_id                    # which chat session it came from
+            })
+        
+        # also try sending feedback to LangSmith (for monitoring)
+        try:
+            feedback_data = {
+                "feedback_text": sanitize_text(feedback.feedback_text), # cleaned text again
+                "rating": feedback.rating,
+                "normalized_score": feedback.rating / 5.0,              # turns score into 0â€“1 scale
+                "user_type": feedback.user_type,
+                "session_id": feedback.session_id,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            # simple helper to record feedback activity
+            from langsmith import traceable # a tool for observing, debugging, and improving AI apps
+            @traceable(name="user_feedback_submission") # When this function runs, record its activity in LangSmith under this name
+            def log_feedback_event(data):
+                return {"status": "feedback_logged", "data": data}
+            
+            log_feedback_event(feedback_data)  # send feedback data to LangSmith
+            print(f"âœ… Feedback logged to LangSmith: {feedback.rating}/5 stars")
+            
+        except Exception as ls_err:
+            # if feedback canâ€™t be sent online, just show a warning
+            print(f"âš ï¸ Could not send feedback to LangSmith: {ls_err}")
+        
+        print(f"âœ… Feedback saved locally: {feedback.rating}/5 stars")
+        return {"message": "Feedback submitted successfully", "status": "success"}
+    
+    except Exception as e:
+        # show error if saving feedback fails
+        print(f"âŒ Error saving feedback: {e}")
+        return {"message": "Error submitting feedback", "status": "error"}
