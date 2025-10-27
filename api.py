@@ -682,72 +682,41 @@ def log_query(query_text: str, answer_text: str, answered_flag: bool, chunks_fou
 
 
 def load_embeddings_and_db():
-    """Load embeddings and database with memory optimization"""
+    """Load pre-built embeddings and database (NO building, just loading)"""
     try:
         import os
-        import gc  # Garbage collector
         
-        # Use a lighter embedding model
+        print("🧠 Loading embeddings model...")
+        # Load embeddings model
         embeddings = HuggingFaceEmbeddings(
             model_name="sentence-transformers/all-MiniLM-L6-v2",
-            model_kwargs={'device': 'cpu'},  # Force CPU
-            encode_kwargs={'normalize_embeddings': True, 'batch_size': 8}  # Smaller batches
+            model_kwargs={'device': 'cpu'},
+            encode_kwargs={'normalize_embeddings': True}
         )
         print("✅ Embeddings model loaded")
         
         db_path = "data/chroma_db"
         
-        # Check if database exists
-        if os.path.exists(db_path) and os.listdir(db_path):
-            print("📂 Loading existing Chroma database...")
-            db = Chroma(
-                persist_directory=db_path, 
-                embedding_function=embeddings,
-                collection_metadata={"hnsw:space": "cosine"}  # More memory efficient
-            )
-        else:
-            print("🔨 Creating new Chroma database...")
-            
-            if not HANDBOOK_TEXT:
-                print("❌ Cannot create database: Handbook not loaded")
-                return None, None, None
-            
-            # Smaller chunks = less memory
-            from langchain.text_splitter import RecursiveCharacterTextSplitter
-            text_splitter = RecursiveCharacterTextSplitter(
-                chunk_size=800,  # Reduced from 1000
-                chunk_overlap=150  # Reduced from 200
-            )
-            chunks = text_splitter.split_text(HANDBOOK_TEXT)
-            print(f"📄 Split into {len(chunks)} chunks")
-            
-            # Process in smaller batches to avoid memory spikes
-            batch_size = 50
-            db = None
-            for i in range(0, len(chunks), batch_size):
-                batch = chunks[i:i+batch_size]
-                if db is None:
-                    db = Chroma.from_texts(
-                        texts=batch,
-                        embedding=embeddings,
-                        persist_directory=db_path
-                    )
-                else:
-                    db.add_texts(batch)
-                print(f"💾 Processed {min(i+batch_size, len(chunks))}/{len(chunks)} chunks")
-                gc.collect()  # Free memory
-            
-            db.persist()
-            print("💾 Database created and saved")
+        # Check if pre-built database exists
+        if not os.path.exists(db_path) or not os.listdir(db_path):
+            print(f"❌ Pre-built database not found at {db_path}")
+            print("❌ Please run build_database.py locally and push to GitHub")
+            return None, None, None
         
-        # Create retriever with smaller k to use less memory
+        print(f"📂 Loading pre-built Chroma database from {db_path}...")
+        db = Chroma(
+            persist_directory=db_path, 
+            embedding_function=embeddings
+        )
+        print("✅ Database loaded successfully")
+        
+        # Create retriever
         retriever = db.as_retriever(
             search_type="mmr", 
-            search_kwargs={"k": 10, "fetch_k": 25, "lambda_mult": 0.5}  # Reduced from 15/35
+            search_kwargs={"k": 10, "fetch_k": 25, "lambda_mult": 0.5}
         )
         
         print("✅ Database and retriever ready")
-        gc.collect()  # Final cleanup
         return embeddings, db, retriever
     
     except Exception as e:
