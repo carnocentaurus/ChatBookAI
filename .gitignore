@@ -28,3 +28,11 @@ FlutterApp/build/
 FlutterApp/.dart_tool/
 FlutterApp/.packages
 FlutterApp/pubspec.lock
+
+# Build scripts (keep locally)
+build_db.py
+
+# IDE
+.vscode/
+.idea/
+*.swp
