@@ -108,18 +108,27 @@ class _FeedbackPageState extends State<FeedbackPage> {
           Align(
             alignment: Alignment.centerRight,
             child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue, // Blue background
+                foregroundColor: Colors.white, // White text
+              ),
               child: Text("Submit"),
               onPressed: () async {
                 // Prevents sending empty feedback
                 if (_feedbackController.text.trim().isEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text("Please enter feedback")),
+                    SnackBar(
+                      content: Text("Please enter feedback"),
+                      behavior: SnackBarBehavior.floating,
+                      margin: EdgeInsets.only(
+                        top: 16,
+                        left: 16,
+                        right: 16,
+                      ),
+                    ),
                   );
                   return;
                 }
-
-                // Closes the feedback page before sending data
-                Navigator.of(context).pop();
 
                 // Sends feedback to backend (session ID is used here)
                 final result = await submitFeedback(
@@ -135,8 +144,17 @@ class _FeedbackPageState extends State<FeedbackPage> {
                     content: Text(result["message"]),
                     backgroundColor:
                         result["success"] ? Colors.green : Colors.red,
+                    behavior: SnackBarBehavior.floating,
+                    margin: EdgeInsets.only(
+                      top: 16,
+                      left: 16,
+                      right: 16,
+                    ),
                   ),
                 );
+
+                // Closes the feedback page *after* showing snackbar
+                Future.microtask(() => Navigator.of(context).pop());
               },
             ),
           ),
