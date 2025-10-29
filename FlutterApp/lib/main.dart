@@ -26,7 +26,7 @@ void main() { // The entry point of every Flutter app. Execution starts here.
 }
 
 
-const bool useProduction = false;  // true = Render, false = local
+const bool useProduction = true;  // true = Render, false = local
 
 String getBaseUrl() {
   if (useProduction) {
