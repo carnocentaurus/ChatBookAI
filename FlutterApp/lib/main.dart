@@ -38,7 +38,7 @@ String getBaseUrl() {
       return "http://127.0.0.1:8000";
     } 
     else if (Platform.isAndroid || Platform.isIOS) {
-      return "http://192.168.56.1";  // PC's local IP
+      return "http://10.155.40.213:8000";
     }
   }
   throw UnsupportedError("Unsupported platform");
@@ -186,7 +186,7 @@ class _SplashWrapperState extends State<SplashWrapper> { // This class controls 
           backgroundColor: const Color(0xFF1976d2), // Set background color to blue
           body: Center( // Put things in the middle of the screen
             child: Image.asset( // Show an image from the app’s files
-              'assets/images/ChatBookAILogoAppIcon.png', // The logo image to show
+              'assets/images/ChatBookAILogoAppIcon2.png', // The logo image to show
               width: 180, // Size of the logo
             ),
           ),
@@ -352,7 +352,7 @@ Widget build(BuildContext context) {
                   children: [
                     // App logo (small icon)
                     Image.asset(
-                      'assets/images/ChatBookAILogoAppIcon.png',
+                      'assets/images/ChatBookAILogoAppIcon2.png',
                       height: 28,
                       width: 28,
                       fit: BoxFit.contain, // It tells Flutter how to resize the image to fit its box.
