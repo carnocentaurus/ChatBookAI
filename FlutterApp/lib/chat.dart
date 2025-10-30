@@ -96,10 +96,11 @@ void initState() {
 
   // heart of your chat system
   Future<void> _sendMessage(String text) async {
-    if (text.trim().isEmpty) return; // checks if the user typed nothing or only spaces.
+    final trimmedText = text.trim(); // removes leading and trailing spaces from the message
+    if (trimmedText.isEmpty) return; // checks if the user typed nothing or only spaces.
 
     setState(() { // updates what's shown on the screen.
-      _messages.add(_Message(text: text, isUser: true)); // adds the user's message to the chat list.
+      _messages.add(_Message(text: trimmedText, isUser: true)); // adds the trimmed user message to the chat list
       _isTyping = true;
     });
 
@@ -108,7 +109,7 @@ void initState() {
 
     try {
       // sends the message (text) to the AI backend and waits for its answer.
-      final answer = await queryHandbook(text);
+      final answer = await queryHandbook(trimmedText); // sends the cleaned message without extra spaces
 
       setState(() {
         _messages.add(_Message(text: answer, isUser: false));
@@ -272,6 +273,10 @@ void initState() {
                       child: TextField(
                         controller: _controller, // stores what you type
                         focusNode: _focusNode, // connects the focus node
+                        enabled: !_isTyping, // disables input box when bot is typing to prevent multiple messages
+                        onTap: () { // runs when the user taps/clicks on the input box
+                          _scrollToBottom(); // automatically scrolls chat to bottom when input is tapped
+                        },
                         onSubmitted: (text) => _sendMessage(text), // sends the message when you press Enter
                         decoration: InputDecoration( // adds the gray background and "Message" hint
                           hintText: "Message",
@@ -300,14 +305,18 @@ void initState() {
                     SizedBox(width: responsive.paddingSmall(6)),
                     CircleAvatar(
                       radius: responsive.screenWidth * 0.06,
-                      backgroundColor: Colors.blue.shade700,
+                      backgroundColor: _isTyping 
+                          ? Colors.grey.shade400 // gray color when bot is typing (disabled state)
+                          : Colors.blue.shade700, // normal blue color when ready to send
                       child: IconButton(
                         icon: Icon(
                           Icons.send,
                           color: Colors.white,
                           size: responsive.fontMedium(),
                         ),
-                        onPressed: () => _sendMessage(_controller.text),
+                        onPressed: _isTyping 
+                            ? null // disables send button when bot is typing
+                            : () => _sendMessage(_controller.text), // sends message when enabled
                       ),
                     ),
                   ],
