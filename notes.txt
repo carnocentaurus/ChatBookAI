@@ -8,11 +8,11 @@ V5
 6. add feeback page in flutter app and admin panel
 7. langsmith dashboard
 8. app logo, splash state, splash screen, and custom font
+9. apk now works on phone via mobile hotspot
 
 next:
 1. find a way to start system without manually running uvicorn
 2. find a way to access admin panel in other devices
-3. make the system apk work on phone
 
 possible future features:
 1. add search/filter functionality to manage queries
