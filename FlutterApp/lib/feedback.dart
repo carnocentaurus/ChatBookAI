@@ -109,7 +109,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
             alignment: Alignment.centerRight,
             child: ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blue, // Blue background
+                backgroundColor: Color(0xFF1976d2), // Blue background
                 foregroundColor: Colors.white, // White text
               ),
               child: Text("Submit"),
@@ -144,12 +144,6 @@ class _FeedbackPageState extends State<FeedbackPage> {
                     content: Text(result["message"]),
                     backgroundColor:
                         result["success"] ? Colors.green : Colors.red,
-                    behavior: SnackBarBehavior.floating,
-                    margin: EdgeInsets.only(
-                      top: 16,
-                      left: 16,
-                      right: 16,
-                    ),
                   ),
                 );
 
