@@ -273,5 +273,20 @@
     "topic": "main color",
     "information": "blue",
     "added_at": "2025-10-28T17:22:29.822783"
+  },
+  "misyon": {
+    "topic": "misyon",
+    "information": "GSU is committed to produce globally-competitive, technologically-equipped and research-oriented graduates of quality and innovative advanced and higher education programs in sustainable agriculture, fisheries, forestry and tourism, entrepreneurship,liberal arts, education, healthcare, sciences and good governance.",
+    "added_at": "2025-10-30T09:49:54.023331"
+  },
+  "bisyon": {
+    "topic": "bisyon",
+    "information": "By 2040, GSU is a premier university on education, green technology, innovations,and community transformation excelling in the holistic development of globally competitive, locally responsive and resilient human capital.",
+    "added_at": "2025-10-30T09:51:42.953012"
+  },
+  "where_is_gsu_mosqueda_located": {
+    "topic": "where is gsu mosqueda located",
+    "information": "Guimaras State University (GSU) Mosqueda Campus is located in the municipality of Jordan, Guimaras, Philippines.",
+    "added_at": "2025-10-30T12:02:09.419755"
   }
 }

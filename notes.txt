@@ -12,7 +12,6 @@ V5
 
 next:
 1. find a way to start system without manually running uvicorn
-2. find a way to access admin panel in other devices
 
 possible future features:
 1. add search/filter functionality to manage queries
