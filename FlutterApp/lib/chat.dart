@@ -38,7 +38,7 @@ class ChatPage extends StatefulWidget {
   const ChatPage({Key? key}) : super(key: key);
 
   @override
-  // createState() tells Flutter which State class should manage this widget’s behavior.
+  // createState() tells Flutter which State class should manage this widget's behavior.
   ChatPageState createState() => ChatPageState();
 }
 
@@ -48,17 +48,21 @@ class ChatPageState extends State<ChatPage> {
   final TextEditingController _controller = TextEditingController(); // This controller manages the TextField (the input box).
   final ScrollController _scrollController = ScrollController(); // Used to automatically scroll to the bottom when new messages appear.
   final FocusNode _focusNode = FocusNode(); // Manages keyboard focus on the input field.
-  bool _isTyping = false; // tracks whether the AI is currently “typing.”
+  bool _isTyping = false; // tracks whether the AI is currently "typing."
 
-  // what happens when the page first appears.
-  @override
-  void initState() { 
-    super.initState(); // do everything Flutter normally does when starting a screen.
-    // Show keyboard automatically when app loads
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      FocusScope.of(context).requestFocus(_focusNode); // This is the line that actually opens the keyboard.
-    });
-  }
+  
+@override
+void initState() {
+  super.initState();
+
+  // Request focus immediately after the first frame is rendered
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (mounted) {
+      _focusNode.requestFocus();
+    }
+  });
+}
+
 
   // what happens when the page is about to be removed or closed.
   @override
@@ -66,7 +70,7 @@ class ChatPageState extends State<ChatPage> {
     _scrollController.dispose(); // Stops and deletes the scroll controller
     _controller.dispose(); // Closes the text controller — the one that handled the text box input.
     _focusNode.dispose(); // Releases the focus control (keyboard management)
-    super.dispose(); // this runs Flutter’s default cleanup too, to make sure nothing is left behind.
+    super.dispose(); // this runs Flutter's default cleanup too, to make sure nothing is left behind.
   }
 
   // automatically scrolls the chat window down to show the latest message
@@ -94,8 +98,8 @@ class ChatPageState extends State<ChatPage> {
   Future<void> _sendMessage(String text) async {
     if (text.trim().isEmpty) return; // checks if the user typed nothing or only spaces.
 
-    setState(() { // updates what’s shown on the screen.
-      _messages.add(_Message(text: text, isUser: true)); // adds the user’s message to the chat list.
+    setState(() { // updates what's shown on the screen.
+      _messages.add(_Message(text: text, isUser: true)); // adds the user's message to the chat list.
       _isTyping = true;
     });
 
@@ -108,7 +112,7 @@ class ChatPageState extends State<ChatPage> {
 
       setState(() {
         _messages.add(_Message(text: answer, isUser: false));
-        _isTyping = false; // hides the “Bot is typing...” message.
+        _isTyping = false; // hides the "Bot is typing..." message.
       });
 
       _scrollToBottom();
@@ -250,9 +254,11 @@ class ChatPageState extends State<ChatPage> {
 
               // This is where the user types and sends messages.
               Container(
-                padding: EdgeInsets.symmetric(
-                  horizontal: responsive.paddingSmall(8),
-                  vertical: responsive.paddingSmall(6),
+                padding: EdgeInsets.only(
+                  left: responsive.paddingSmall(8),
+                  right: responsive.paddingSmall(8),
+                  top: responsive.paddingSmall(6),
+                  bottom: responsive.paddingSmall(6) + MediaQuery.of(context).padding.bottom,
                 ),
                 decoration: BoxDecoration(
                   color: Colors.white,
@@ -265,8 +271,9 @@ class ChatPageState extends State<ChatPage> {
                     Expanded(
                       child: TextField(
                         controller: _controller, // stores what you type
+                        focusNode: _focusNode, // connects the focus node
                         onSubmitted: (text) => _sendMessage(text), // sends the message when you press Enter
-                        decoration: InputDecoration( // adds the gray background and “Message” hint
+                        decoration: InputDecoration( // adds the gray background and "Message" hint
                           hintText: "Message",
                           hintStyle: TextStyle(
                             color: Colors.grey.shade600,
