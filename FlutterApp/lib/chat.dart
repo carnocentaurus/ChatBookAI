@@ -223,7 +223,7 @@ void initState() {
                                 horizontal: responsive.paddingMedium(24),
                               ),
                               child: Text(
-                                "Ask me anything about your handbook!",
+                                "Ask me about the GSU student handbook",
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
                                   fontSize: responsive.fontSmall(),
