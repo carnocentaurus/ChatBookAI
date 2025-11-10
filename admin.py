@@ -379,6 +379,8 @@ def setup_admin_routes(app, memory, LOG_FILE, MEMORY_DB):
 def get_base_style():
     """Clean, modern CSS with proper responsive design"""
     return """
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
+
         /*CSS variables (custom properties).reused throughout the stylesheet*/
         :root {
             --blue: #1976d2;
@@ -400,7 +402,7 @@ def get_base_style():
         * { box-sizing: border-box; }
 
         body {
-            font-family: Arial, sans-serif;
+            font-family: 'Poppins', Arial, sans-serif;
             margin: 20px;
             background-color: #f5f5f5;
             font-size: 16px;
