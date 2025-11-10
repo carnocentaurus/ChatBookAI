@@ -1213,106 +1213,6 @@ def get_manage_queries_with_resolved_html(all_needing_attention):
     """
 
 
-def get_feedback_html(feedback_list, total_feedback, avg_rating, rating_distribution):
-    """Feedback management HTML"""
-    
-    feedback_rows = ""
-    for feedback in feedback_list:
-        timestamp = feedback.get('timestamp', '')[:19].replace('T', ' ')
-        feedback_text = feedback.get('feedback_text', '')
-        rating = feedback.get('rating', 0)
-        user_type = feedback.get('user_type', 'student')
-        
-        # Truncate long feedback for display
-        display_text = feedback_text[:100] + ('...' if len(feedback_text) > 100 else '')
-        
-        # Star rating display
-        stars = '⭐' * int(rating) + '☆' * (5 - int(rating))
-        
-        feedback_rows += f"""
-            <tr>
-                <td>{timestamp}</td>
-                <td title="{feedback_text}">{display_text}</td>
-                <td style="text-align: center;">{stars}<br><small>({rating}/5)</small></td>
-                <td style="text-align: center; text-transform: capitalize;">{user_type}</td>
-            </tr>"""
-    
-    # Rating distribution bars
-    rating_bars = ""
-    for rating in range(5, 0, -1):
-        count = rating_distribution.get(rating, 0)
-        percentage = (count / total_feedback * 100) if total_feedback > 0 else 0
-        rating_bars += f"""
-            <div style="display: flex; align-items: center; margin: 5px 0;">
-                <span style="width: 60px;">{rating} ⭐</span>
-                <div style="flex: 1; background: #e0e0e0; border-radius: 10px; margin: 0 10px; height: 20px;">
-                    <div style="background: #4caf50; height: 20px; border-radius: 10px; width: {percentage}%;"></div>
-                </div>
-                <span style="width: 40px; text-align: right;">{count}</span>
-            </div>"""
-    
-    return f"""
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>User Feedback</title>
-        <style>{get_base_style()}</style>
-    </head>
-    <body>
-        <div class="container">
-            {get_nav_html()}
-            
-            <h1>User Feedback</h1>
-            
-            <div class="card">
-                <h2>Feedback Overview</h2>
-                <div class="stats">
-                    <div class="stat">
-                        <h3>{total_feedback}</h3>
-                        <p>Total Feedback</p>
-                    </div>
-                    <div class="stat">
-                        <h3>{avg_rating:.1f}</h3>
-                        <p>Average Rating</p>
-                    </div>
-                    <div class="stat">
-                        <h3>{rating_distribution.get(5, 0)}</h3>
-                        <p>5-Star Reviews</p>
-                    </div>
-                    <div class="stat">
-                        <h3>{rating_distribution.get(1, 0) + rating_distribution.get(2, 0)}</h3>
-                        <p>Low Ratings (1-2★)</p>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="card">
-                <h2>Rating Distribution</h2>
-                {rating_bars if rating_bars else '<p style="text-align: center; color: var(--muted);">No ratings yet</p>'}
-            </div>
-            
-            <div class="card">
-                <h2>All Feedback</h2>
-                <div class="table-container">
-                    <table>
-                        <tr>
-                            <th>Date</th>
-                            <th>Feedback</th>
-                            <th>Rating</th>
-                            <th>User Type</th>
-                        </tr>
-                        {feedback_rows if feedback_rows else '<tr><td colspan="4" style="text-align: center; color: var(--muted);">No feedback submitted yet</td></tr>'}
-                    </table>
-                </div>
-            </div>
-        </div>
-    </body>
-    </html>
-    """
-
-
 def get_upload_handbook_html(handbook_info):
     """Upload handbook PDF form HTML"""
     return f"""
@@ -1429,6 +1329,146 @@ def get_upload_handbook_html(handbook_info):
                 }}, 5000);
             }});
         </script>
+    </body>
+    </html>
+    """
+
+
+def get_feedback_html(feedback_list, total_feedback, avg_rating, rating_distribution):
+    """Feedback management HTML with enhanced statistics"""
+    
+    feedback_rows = ""
+    for feedback in feedback_list:
+        timestamp = feedback.get('timestamp', '')[:19].replace('T', ' ')
+        feedback_text = feedback.get('feedback_text', '')
+        rating = feedback.get('rating', 1)  # Default to 1 since that's the minimum rating
+        user_type = feedback.get('user_type', 'student')
+        
+        # Truncate long feedback for display
+        display_text = feedback_text[:100] + ('...' if len(feedback_text) > 100 else '')
+        
+        # Star rating display
+        stars = '⭐' * int(rating) + '☆' * (5 - int(rating))
+        
+        feedback_rows += f"""
+            <tr>
+                <td>{timestamp}</td>
+                <td title="{feedback_text}">{display_text}</td>
+                <td style="text-align: center;">{stars}<br><small>({rating}/5)</small></td>
+                <td style="text-align: center; text-transform: capitalize;">{user_type}</td>
+            </tr>"""
+    
+    # Calculate user type distribution (Counter already imported at top of admin.py)
+    user_type_counter = {}
+    for feedback in feedback_list:
+        user_type = feedback.get('user_type', 'student').lower()
+        user_type_counter[user_type] = user_type_counter.get(user_type, 0) + 1
+    
+    # Rating distribution bars
+    rating_bars = ""
+    for rating in range(5, 0, -1):
+        count = rating_distribution.get(rating, 0)
+        percentage = (count / total_feedback * 100) if total_feedback > 0 else 0
+        rating_bars += f"""
+            <div style="display: flex; align-items: center; margin: 5px 0;">
+                <span style="width: 60px;">{rating} ⭐</span>
+                <div style="flex: 1; background: #e0e0e0; border-radius: 10px; margin: 0 10px; height: 20px;">
+                    <div style="background: #4caf50; height: 20px; border-radius: 10px; width: {percentage}%;"></div>
+                </div>
+                <span style="width: 80px; text-align: right;">{count} ({percentage:.1f}%)</span>
+            </div>"""
+    
+    return f"""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>User Feedback</title>
+        <style>{get_base_style()}</style>
+    </head>
+    <body>
+        <div class="container">
+            {get_nav_html()}
+            
+            <h1>User Feedback</h1>
+            
+            <div class="card">
+                <h2>Overall Statistics</h2>
+                <div class="stats">
+                    <div class="stat">
+                        <h3>{total_feedback}</h3>
+                        <p>Total Feedback</p>
+                    </div>
+                    <div class="stat">
+                        <h3>{avg_rating:.1f}</h3>
+                        <p>Average Rating</p>
+                    </div>
+                    <div class="stat">
+                        <h3>{rating_distribution.get(5, 0)}</h3>
+                        <p>5-Star Reviews</p>
+                    </div>
+                    <div class="stat">
+                        <h3>{rating_distribution.get(4, 0)}</h3>
+                        <p>4-Star Reviews</p>
+                    </div>
+                    <div class="stat">
+                        <h3>{rating_distribution.get(3, 0)}</h3>
+                        <p>3-Star Reviews</p>
+                    </div>
+                    <div class="stat">
+                        <h3>{rating_distribution.get(2, 0)}</h3>
+                        <p>2-Star Reviews</p>
+                    </div>
+                    <div class="stat">
+                        <h3>{rating_distribution.get(1, 0)}</h3>
+                        <p>1-Star Reviews</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h2>Feedback by User Type</h2>
+                <div class="stats">
+                    <div class="stat">
+                        <h3>{user_type_counter.get('student', 0)}</h3>
+                        <p>Students</p>
+                    </div>
+                    <div class="stat">
+                        <h3>{user_type_counter.get('faculty', 0)}</h3>
+                        <p>Faculty</p>
+                    </div>
+                    <div class="stat">
+                        <h3>{user_type_counter.get('staff', 0)}</h3>
+                        <p>Staff</p>
+                    </div>
+                    <div class="stat">
+                        <h3>{user_type_counter.get('visitor', 0)}</h3>
+                        <p>Visitors</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h2>Rating Distribution</h2>
+                {rating_bars if rating_bars else '<p style="text-align: center; color: var(--muted);">No ratings yet</p>'}
+            </div>
+            
+            <div class="card">
+                <h2>All Feedback</h2>
+                <div class="table-container">
+                    <table>
+                        <tr>
+                            <th>Date</th>
+                            <th>Feedback</th>
+                            <th>Rating</th>
+                            <th>User Type</th>
+                        </tr>
+                        {feedback_rows if feedback_rows else '<tr><td colspan="4" style="text-align: center; color: var(--muted);">No feedback submitted yet</td></tr>'}
+                    </table>
+                </div>
+            </div>
+        </div>
     </body>
     </html>
     """
