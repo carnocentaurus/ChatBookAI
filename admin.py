@@ -765,6 +765,10 @@ def get_updated_dashboard_html(
         query_text = query.get('query_text', '')
         query_display = query_text[:80] + ('...' if len(query_text) > 80 else '')
         
+        # Get the response text (column name is 'answer_text' in your CSV)
+        response_text = query.get('answer_text', 'No response recorded')
+        response_display = response_text[:100] + ('...' if len(response_text) > 100 else '')
+        
         # Check if the query was answered
         answered_field = (query.get('answered') or '').strip().lower()
         if answered_field in ["true", "1", "yes"]:
@@ -777,6 +781,7 @@ def get_updated_dashboard_html(
             <tr>
                 <td>{timestamp}</td>
                 <td title="{query_text}">{query_display}</td>
+                <td title="{response_text}">{response_display}</td>
                 <td style="text-align: center;">{status_icon}</td>
             </tr>"""
     
@@ -837,9 +842,10 @@ def get_updated_dashboard_html(
                         <tr>
                             <th>Time</th>
                             <th>Query</th>
+                            <th>Response</th>
                             <th>Status</th>
                         </tr>
-                        {recent_queries_html if recent_queries_html else '<tr><td colspan="3" style="text-align: center; color: var(--muted);">No recent queries</td></tr>'}
+                        {recent_queries_html if recent_queries_html else '<tr><td colspan="4" style="text-align: center; color: var(--muted);">No recent queries</td></tr>'}
                     </table>
                 </div>
             </div>
