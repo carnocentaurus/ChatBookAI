@@ -1,11 +1,10 @@
 // chat.dart
 
-import 'package:flutter/material.dart'; // gives access to all Flutter UI tools (widgets, colors, layouts, etc.).
-import 'main.dart'; // imports functions or classes (like queryHandbook()) that the chat might use later.
+import 'package:flutter/material.dart';
+import 'main.dart';
 
 // ============ RESPONSIVE HELPER CLASS ============
 class ResponsiveSize {
-  // This allows it to use MediaQuery to get the screen size of the current device.
   final BuildContext context;
   ResponsiveSize(this.context);
 
@@ -16,13 +15,11 @@ class ResponsiveSize {
   bool get isPhone => screenWidth < 600;
   bool get isTablet => screenWidth >= 600;
 
-  // These functions scale padding proportionally to screen width.
   double paddingXSmall(double baseValue) => baseValue * (screenWidth / 360);
   double paddingSmall(double baseValue) => baseValue * (screenWidth / 400);
   double paddingMedium(double baseValue) => baseValue * (screenWidth / 500);
   double paddingLarge(double baseValue) => baseValue * (screenWidth / 600);
  
-  // Each method returns a font size based on the screen type:
   double fontXSmall() => isSmallPhone ? 10 : 12;
   double fontSmall() => isSmallPhone ? 12 : 14;
   double fontMedium() => isSmallPhone ? 14 : 16;
@@ -33,53 +30,45 @@ class ResponsiveSize {
 
 
 class ChatPage extends StatefulWidget {
-  // Key? key is an optional identifier used internally by Flutter to optimize widget rebuilding.
-  // super(key: key) passes that key to the parent class (StatefulWidget).
   const ChatPage({Key? key}) : super(key: key);
 
   @override
-  // createState() tells Flutter which State class should manage this widget's behavior.
   ChatPageState createState() => ChatPageState();
 }
 
-// This defines the state (the dynamic part) for the ChatPage
 class ChatPageState extends State<ChatPage> {
-  final List<_Message> _messages = []; // A list holding all chat messages.
-  final TextEditingController _controller = TextEditingController(); // This controller manages the TextField (the input box).
-  final ScrollController _scrollController = ScrollController(); // Used to automatically scroll to the bottom when new messages appear.
-  final FocusNode _focusNode = FocusNode(); // Manages keyboard focus on the input field.
-  bool _isTyping = false; // tracks whether the AI is currently "typing."
+  final List<_Message> _messages = [];
+  final TextEditingController _controller = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
+  final FocusNode _focusNode = FocusNode();
+  bool _isTyping = false;
+  bool _isCancelled = false; // NEW: tracks if user cancelled the response
 
   
-@override
-void initState() {
-  super.initState();
-
-  // Request focus immediately after the first frame is rendered
-  WidgetsBinding.instance.addPostFrameCallback((_) {
-    if (mounted) {
-      _focusNode.requestFocus();
-    }
-  });
-}
-
-
-  // what happens when the page is about to be removed or closed.
   @override
-  void dispose() { // This runs when the chat page is closing or being removed from memory.
-    _scrollController.dispose(); // Stops and deletes the scroll controller
-    _controller.dispose(); // Closes the text controller — the one that handled the text box input.
-    _focusNode.dispose(); // Releases the focus control (keyboard management)
-    super.dispose(); // this runs Flutter's default cleanup too, to make sure nothing is left behind.
+  void initState() {
+    super.initState();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _focusNode.requestFocus();
+      }
+    });
   }
 
-  // automatically scrolls the chat window down to show the latest message
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    _controller.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
   void _scrollToBottom() {
-    // Wait until the screen finishes updating, then run this code
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) { // checks if the chat list is actually on screen and ready to scroll.
-        _scrollController.animateTo( // Scroll down smoothly to the bottom of the chat messages.
-          _scrollController.position.maxScrollExtent, // Go to the very bottom of the scrollable area (where the latest messages are)
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeOut,
         );
@@ -87,74 +76,88 @@ void initState() {
     });
   }
   
-  // automatically fills in the chat box with a question and sends it
   void autoQuery(String question) {
-    _controller.text = question; // Put the given text (question) inside the chat input box.
+    _controller.text = question;
     _sendMessage(question);
   }
 
+  // NEW: Function to stop the bot's response
+  void _stopResponse() {
+    setState(() {
+      _isCancelled = true;
+      _isTyping = false;
+    });
+  }
 
-  // heart of your chat system
   Future<void> _sendMessage(String text) async {
-    final trimmedText = text.trim(); // removes leading and trailing spaces from the message
-    if (trimmedText.isEmpty) return; // checks if the user typed nothing or only spaces.
+    final trimmedText = text.trim();
+    if (trimmedText.isEmpty) return;
 
-    setState(() { // updates what's shown on the screen.
-      _messages.add(_Message(text: trimmedText, isUser: true)); // adds the trimmed user message to the chat list
+    setState(() {
+      _messages.add(_Message(text: trimmedText, isUser: true));
       _isTyping = true;
+      _isCancelled = false; // Reset cancellation flag
     });
 
     _scrollToBottom();
-    _controller.clear(); // clears the message input box
+    _controller.clear();
 
     try {
-      // sends the message (text) to the AI backend and waits for its answer.
-      final answer = await queryHandbook(trimmedText); // sends the cleaned message without extra spaces
+      final answer = await queryHandbook(trimmedText);
 
-      setState(() {
-        _messages.add(_Message(text: answer, isUser: false));
-        _isTyping = false; // hides the "Bot is typing..." message.
-      });
+      // Check if response was cancelled before adding the message
+      if (!_isCancelled) {
+        setState(() {
+          _messages.add(_Message(text: answer, isUser: false));
+          _isTyping = false;
+        });
 
-      _scrollToBottom();
+        _scrollToBottom();
+      } else {
+        // If cancelled, add a cancellation message
+        setState(() {
+          _messages.add(_Message(text: "Response stopped by user.", isUser: false));
+        });
+        _scrollToBottom();
+      }
     } 
     catch (e) {
-      setState(() {
-        _messages.add(
-          _Message(text: "⚠️ Cannot connect to server.", isUser: false),
-        );
-        _isTyping = false;
-      });
+      // Only show error if not cancelled
+      if (!_isCancelled) {
+        setState(() {
+          _messages.add(
+            _Message(text: "⚠️ Cannot connect to server.", isUser: false),
+          );
+          _isTyping = false;
+        });
 
-      _scrollToBottom();
+        _scrollToBottom();
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final bool hasMessages = _messages.isNotEmpty; // checks if there are any chat messages.
-    final responsive = ResponsiveSize(context); // creates a helper tool that adjusts the layout depending on screen size
+    final bool hasMessages = _messages.isNotEmpty;
+    final responsive = ResponsiveSize(context);
  
-    // tarts building the vertical layout of the page — everything stacked top to bottom.
     return Column(
       children: [
-        Expanded( // This part should take up all remaining screen space
+        Expanded(
           child: Column(
             children: [
-              Expanded( // the main chat area.
+              Expanded(
                 child: hasMessages
-                    ? ListView.builder( // This creates the scrollable list of messages.
+                    ? ListView.builder(
                         controller: _scrollController,
                         padding: EdgeInsets.all(responsive.paddingSmall(12)),
                         itemCount: _messages.length,
-                        itemBuilder: (context, index) { // This creates the scrollable list of messages.
+                        itemBuilder: (context, index) {
                           final message = _messages[index];
-                          // Aligns it left or right depending on who sent it
                           return Align(
                             alignment: message.isUser
                                 ? Alignment.centerRight
                                 : Alignment.centerLeft,
-                            // Each message is wrapped in a Container that styles the bubble.
                             child: Container(
                               margin: EdgeInsets.symmetric(
                                 vertical: responsive.paddingSmall(4),
@@ -181,7 +184,7 @@ void initState() {
                                   ),
                                 ],
                               ),
-                              child: SelectableText( // The actual message text — you can even select and copy it.
+                              child: SelectableText(
                                 message.text,
                                 style: TextStyle(
                                   fontSize: responsive.fontSmall(),
@@ -237,7 +240,7 @@ void initState() {
                       ),
               ),
 
-              if (_isTyping) // only appears while the AI is responding.
+              if (_isTyping)
                 Padding(
                   padding: EdgeInsets.all(responsive.paddingSmall(8)),
                   child: Align(
@@ -253,7 +256,6 @@ void initState() {
                   ),
                 ),
 
-              // This is where the user types and sends messages.
               Container(
                 padding: EdgeInsets.only(
                   left: responsive.paddingSmall(8),
@@ -271,14 +273,14 @@ void initState() {
                   children: [
                     Expanded(
                       child: TextField(
-                        controller: _controller, // stores what you type
-                        focusNode: _focusNode, // connects the focus node
-                        enabled: !_isTyping, // disables input box when bot is typing to prevent multiple messages
-                        onTap: () { // runs when the user taps/clicks on the input box
-                          _scrollToBottom(); // automatically scrolls chat to bottom when input is tapped
+                        controller: _controller,
+                        focusNode: _focusNode,
+                        enabled: !_isTyping,
+                        onTap: () {
+                          _scrollToBottom();
                         },
-                        onSubmitted: (text) => _sendMessage(text), // sends the message when you press Enter
-                        decoration: InputDecoration( // adds the gray background and "Message" hint
+                        onSubmitted: (text) => _sendMessage(text),
+                        decoration: InputDecoration(
                           hintText: "Message",
                           hintStyle: TextStyle(
                             color: Colors.grey.shade600,
@@ -298,7 +300,7 @@ void initState() {
                         style: TextStyle(
                           fontSize: responsive.fontSmall(),
                         ),
-                        maxLines: null, // lets the box grow as you type long messages
+                        maxLines: null,
                         textCapitalization: TextCapitalization.sentences,
                       ),
                     ),
@@ -306,17 +308,17 @@ void initState() {
                     CircleAvatar(
                       radius: responsive.screenWidth * 0.06,
                       backgroundColor: _isTyping 
-                          ? Colors.grey.shade400 // gray color when bot is typing (disabled state)
-                          : Colors.blue.shade700, // normal blue color when ready to send
+                          ? Colors.red.shade600 // Red when typing (stop button)
+                          : Colors.blue.shade700, // Blue when ready to send
                       child: IconButton(
                         icon: Icon(
-                          Icons.send,
+                          _isTyping ? Icons.stop : Icons.send, // Changes icon based on state
                           color: Colors.white,
                           size: responsive.fontMedium(),
                         ),
                         onPressed: _isTyping 
-                            ? null // disables send button when bot is typing
-                            : () => _sendMessage(_controller.text), // sends message when enabled
+                            ? _stopResponse // Call stop function when typing
+                            : () => _sendMessage(_controller.text), // Send message when not typing
                       ),
                     ),
                   ],
@@ -331,8 +333,8 @@ void initState() {
 }
 
 
-class _Message { // This _Message class describes what one chat message looks like.
-  final String text; // holds the actual message content
+class _Message {
+  final String text;
   final bool isUser;
   _Message({required this.text, required this.isUser});
 }
