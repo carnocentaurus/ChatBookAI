@@ -1,14 +1,4 @@
-V5
-
-1. clicking a faq in the faq page will query the chatbot
-2. ranked faq in admin panel includes everything that has been queried atleast twice
-3. replaced analytics page in admin panel with manage queries page
-4. replaced corrected button with resolved date button
-5. responsive admin panel
-6. add feeback page in flutter app and admin panel
-7. langsmith dashboard
-8. app logo, splash state, splash screen, and custom font
-9. apk now works on phone via mobile hotspot
+v6
 
 next:
 1. see chatbot response in recent queries and faq
