@@ -1,4 +1,4 @@
-v6
+V6
 
 next:
 1. see chatbot response in recent queries and faq
