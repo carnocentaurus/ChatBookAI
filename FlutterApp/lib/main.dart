@@ -38,7 +38,7 @@ String getBaseUrl() {
       return "http://127.0.0.1:8000";
     } 
     else if (Platform.isAndroid || Platform.isIOS) {
-      return "http://10.137.133.213:8000";
+      return "http://10.137.133.100:8000";
     }
   }
   throw UnsupportedError("Unsupported platform");
