@@ -11,6 +11,7 @@ import shutil  # copies or replaces files
 from datetime import datetime  # records the date and time of actions
 from collections import Counter  # counts how many times something appears
 from urllib.parse import quote, unquote  # cleans or restores text used in web links
+from typing import List
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -375,6 +376,53 @@ def setup_admin_routes(app, memory, LOG_FILE, MEMORY_DB):
         except Exception as e:
             # If something goes wrong, show an error and go back to manage queries
             print(f"Error marking query as resolved: {e}")
+            return RedirectResponse(url="/admin/manage-queries", status_code=303)
+        
+
+    @app.post("/admin/bulk-mark-resolved")
+    async def bulk_mark_resolved(
+        request: Request,
+        credentials: HTTPBasicCredentials = Depends(verify_admin),
+        selected_queries: List[str] = Form(...)
+    ):
+        """Mark multiple queries as resolved at once"""
+        try:
+            with open(LOG_FILE, "r", encoding="utf-8") as f:
+                reader = list(csv.DictReader(f))
+
+            fieldnames = reader[0].keys() if reader else []
+            if 'resolved_date' not in fieldnames:
+                fieldnames = list(fieldnames) + ['resolved_date']
+
+            today = datetime.now().strftime("%Y-%m-%d")
+            updated_count = 0
+
+            # Mark all selected queries as resolved
+            for record in reader:
+                query_text = record.get("query_text", "").strip().lower()
+            
+                # Check if this record matches any of the selected queries
+                if query_text in [q.lower() for q in selected_queries]:
+                    if not record.get("resolved_date", "").strip():
+                        record["resolved_date"] = today
+                        updated_count += 1
+                    elif "resolved_date" not in record:
+                        record["resolved_date"] = today
+                        updated_count += 1
+
+            # Save updates back to file
+            if reader:
+                with open(LOG_FILE, "w", newline="", encoding="utf-8") as f:
+                    writer = csv.DictWriter(f, fieldnames=fieldnames)
+                    writer.writeheader()
+                    writer.writerows(reader)
+
+            print(f"✅ Bulk resolved {updated_count} query instances across {len(selected_queries)} unique questions")
+
+            return RedirectResponse(url="/admin/manage-queries", status_code=303)
+
+        except Exception as e:
+            print(f"❌ Error in bulk resolve: {e}")
             return RedirectResponse(url="/admin/manage-queries", status_code=303)
 
 
@@ -1620,29 +1668,24 @@ def get_full_faq_html(faq_list, not_answered_list):
 
 
 def get_manage_queries_with_resolved_html(all_needing_attention):
-    """Manage Queries HTML with clean responsive design"""
+    """Manage Queries HTML with multi-select functionality"""
     
     attention_html = ""
-    # all_needing_attention is a list of tuples containing the query and count
     for query, count in all_needing_attention:
-        query_encoded = quote(query) # quote() ensures the text is safe to use in links
-        # takes the first 80 characters of the question
+        query_encoded = quote(query)
         query_display = query[:80] + ('...' if len(query) > 80 else '')
         
         attention_html += f"""
             <tr>
+                <td style="text-align: center; width: 50px;">
+                    <input type="checkbox" name="selected_queries" value="{query}" 
+                           class="query-checkbox" style="width: 18px; height: 18px; cursor: pointer;">
+                </td>
                 <td title="{query}">{query_display}</td>
-                <td>{count}</td>
-                <td>
+                <td style="text-align: center;">{count}</td>
+                <td style="text-align: center;">
                     <a href="/admin/custom-info/add?prefill_topic={query_encoded}" 
                        class="btn btn-success">Add Info</a>
-                    <form method="post" action="/admin/mark-resolved" style="display: inline;">
-                        <input type="hidden" name="question" value="{query}">
-                        <button type="submit" class="btn btn-secondary"
-                                onclick="return confirm('Mark this question as resolved?')">
-                            Resolved
-                        </button>
-                    </form>
                 </td>
             </tr>"""
 
@@ -1654,6 +1697,62 @@ def get_manage_queries_with_resolved_html(all_needing_attention):
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Manage Queries</title>
         <style>{get_base_style()}</style>
+        <script>
+            function toggleSelectAll(source) {{
+                const checkboxes = document.querySelectorAll('.query-checkbox');
+                checkboxes.forEach(checkbox => {{
+                    checkbox.checked = source.checked;
+                }});
+                updateButtonStates();
+            }}
+            
+            function updateButtonStates() {{
+                const checkboxes = document.querySelectorAll('.query-checkbox:checked');
+                const bulkResolveBtn = document.getElementById('bulk-resolve-btn');
+                const selectAllCheckbox = document.getElementById('select-all');
+                const selectedCount = document.getElementById('selected-count');
+                
+                if (checkboxes.length > 0) {{
+                    bulkResolveBtn.disabled = false;
+                    bulkResolveBtn.style.opacity = '1';
+                    selectedCount.textContent = `(${{checkboxes.length}} selected)`;
+                    selectedCount.style.display = 'inline';
+                }} else {{
+                    bulkResolveBtn.disabled = true;
+                    bulkResolveBtn.style.opacity = '0.5';
+                    selectedCount.style.display = 'none';
+                }}
+                
+                // Update select all checkbox state
+                const allCheckboxes = document.querySelectorAll('.query-checkbox');
+                selectAllCheckbox.checked = allCheckboxes.length > 0 && 
+                                           checkboxes.length === allCheckboxes.length;
+            }}
+            
+            function submitBulkResolve() {{
+                const checkboxes = document.querySelectorAll('.query-checkbox:checked');
+                if (checkboxes.length === 0) {{
+                    alert('Please select at least one query to mark as resolved.');
+                    return false;
+                }}
+                
+                const count = checkboxes.length;
+                const confirmMsg = `Mark ${{count}} question${{count > 1 ? 's' : ''}} as resolved?`;
+                
+                if (confirm(confirmMsg)) {{
+                    document.getElementById('bulk-resolve-form').submit();
+                }}
+                return false;
+            }}
+            
+            // Add event listeners when page loads
+            document.addEventListener('DOMContentLoaded', function() {{
+                document.querySelectorAll('.query-checkbox').forEach(checkbox => {{
+                    checkbox.addEventListener('change', updateButtonStates);
+                }});
+                updateButtonStates();
+            }});
+        </script>
     </head>
     <body>
         <div class="container">
@@ -1662,23 +1761,41 @@ def get_manage_queries_with_resolved_html(all_needing_attention):
             <h1>Manage Queries</h1>
             
             <div class="card">
-                <h2>Unresolved Queries</h2>
-                <p>Queries that have not been successfully answered and have not been marked as resolved.</p>
-                
-                <div class="table-container">
-                    <table>
-                        <tr>
-                            <th>Question</th>
-                            <th>Times Asked</th>
-                            <th>Actions</th>
-                        </tr>
-                        {attention_html if attention_html else '<tr><td colspan="3" style="text-align: center; color: var(--muted);">No unresolved queries - excellent job!</td></tr>'}
-                    </table>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
+                    <div>
+                        <h2 style="margin: 0;">Unresolved Queries</h2>
+                        <p style="margin: 5px 0 0 0; color: var(--muted);">Questions that have not been successfully answered</p>
+                    </div>
+                    <div>
+                        <button id="bulk-resolve-btn" onclick="submitBulkResolve()" 
+                                class="btn btn-warning" disabled style="opacity: 0.5;">
+                            Mark as Resolved <span id="selected-count" style="display: none;"></span>
+                        </button>
+                    </div>
                 </div>
+                
+                <form id="bulk-resolve-form" method="post" action="/admin/bulk-mark-resolved">
+                    <div class="table-container">
+                        <table>
+                            <tr>
+                                <th style="text-align: center; width: 50px;">
+                                    <input type="checkbox" id="select-all" onchange="toggleSelectAll(this)" 
+                                           style="width: 18px; height: 18px; cursor: pointer;"
+                                           title="Select/Deselect All">
+                                </th>
+                                <th>Question</th>
+                                <th style="text-align: center; width: 120px;">Times Asked</th>
+                                <th style="text-align: center; width: 150px;">Actions</th>
+                            </tr>
+                            {attention_html if attention_html else '<tr><td colspan="4" style="text-align: center; color: var(--muted); padding: 40px;">No unresolved queries - excellent job!</td></tr>'}
+                        </table>
+                    </div>
+                </form>
                 
                 <div style="margin-top: 20px; padding: 15px; background: var(--light-gray); border-radius: 4px;">
                     <p style="margin: 0; color: var(--muted);">
-                        <strong>Actions:</strong> Use "Add Info" to provide the missing information, or "Resolved" to mark as administratively handled.
+                        <strong>💡 Tip:</strong> Check the boxes next to questions and click "Mark as Resolved" to handle multiple queries at once, 
+                        or use "Add Info" to provide missing information for individual questions.
                     </p>
                 </div>
             </div>
