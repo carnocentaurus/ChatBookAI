@@ -176,51 +176,71 @@ def setup_admin_routes(app, memory, LOG_FILE, MEMORY_DB):
             raise HTTPException(status_code=500, detail=f"Error uploading handbook: {str(e)}")  # Show error message
     
 
-    @app.get("/admin/faq", response_class=HTMLResponse)  # When admin opens the FAQ page
-    async def admin_faq(credentials: HTTPBasicCredentials = Depends(verify_admin)):  # Check admin login
-        # Shows a full list of frequently asked questions from user logs
+    @app.get("/admin/faq", response_class=HTMLResponse)
+    async def admin_faq(credentials: HTTPBasicCredentials = Depends(verify_admin)):
+        """Shows a full list of frequently asked questions from user logs"""
 
         try:
-            with open(LOG_FILE, "r", encoding="utf-8") as f:  # Open the saved question logs
-                reader = list(csv.DictReader(f))  # Read all log entries as a list
+            with open(LOG_FILE, "r", encoding="utf-8") as f:
+                reader = list(csv.DictReader(f))
 
-            # Count how many times each question was asked
+            # ===== FREQUENTLY ASKED QUESTIONS (asked 2+ times) =====
             query_counter = Counter(
                 (r.get("query_text") or "").strip().lower() for r in reader if r.get("query_text")
             )
     
-            # Keep only questions asked two or more times, sorted by how often they were asked
             frequent_questions = [(q, count) for q, count in query_counter.most_common() if count >= 2]
 
-            faq_list = []  # This will store all FAQ data
+            faq_list = []
 
-            for question, count in frequent_questions:  # Go through each popular question
-                # Find all log entries that match this question
+            for question, count in frequent_questions:
                 question_entries = [r for r in reader if (r.get("query_text") or "").strip().lower() == question]
         
-                # Count how many of these were answered
                 answered_count = 0
                 for entry in question_entries:
                     answered_field = (entry.get("answered") or "").strip().lower()
-                    if answered_field in ["true", "1", "yes"]:  # Check if marked as answered
+                    if answered_field in ["true", "1", "yes"]:
                         answered_count += 1
 
-                # Find the percent of times the question was successfully answered
                 success_rate = (answered_count / count * 100) if count > 0 else 0
 
-                # Save the question details in a list
                 faq_data = {
                     "question": question,
                     "total_asked": count,
                     "answered_count": answered_count,
                     "success_rate": success_rate
                 }
-                faq_list.append(faq_data)  # Add to the FAQ list
+                faq_list.append(faq_data)
+
+            # ===== UNANSWERED QUESTIONS (all questions not answered) =====
+            not_answered_counter = Counter()
+        
+            for record in reader:
+                answered_field = (record.get("answered") or "").strip().lower()
+                query_text = (record.get("query_text") or "").strip().lower()
+            
+                # Only count if not answered
+                if answered_field not in ["true", "1", "yes"] and query_text:
+                    not_answered_counter[query_text] += 1
+        
+            # Build list with resolved status
+            not_answered_list = []
+            for question, count in not_answered_counter.most_common():
+                # Check if this question has been marked as resolved
+                question_records = [r for r in reader if (r.get("query_text") or "").strip().lower() == question]
+                is_resolved = any((r.get("resolved_date") or "").strip() for r in question_records)
+            
+                not_answered_list.append((question, count, is_resolved))
 
         except FileNotFoundError:
-            faq_list = []  # If the log file doesn’t exist yet, show an empty FAQ list
+            faq_list = []
+            not_answered_list = []
+        except Exception as e:
+            print(f"Error in admin_faq: {e}")
+            faq_list = []
+            not_answered_list = []
 
-        return HTMLResponse(content=get_full_faq_html(faq_list))  # Show the FAQ page with all the questions
+        return HTMLResponse(content=get_full_faq_html(faq_list, not_answered_list))
 
     
     @app.get("/admin/manage-queries", response_class=HTMLResponse)  # Page for viewing unanswered questions
@@ -1372,28 +1392,26 @@ def get_add_custom_info_form_html(prefilled_topic=""):
     """
 
 
-def get_full_faq_html(faq_list):
-    """Full FAQ page HTML with responsive design and rank numbers"""
+def get_full_faq_html(faq_list, not_answered_list):
+    """Full FAQ page HTML with side-by-side layout"""
 
     faq_html = ""
     for index, faq in enumerate(faq_list):
-        rank = index + 1  # Rank starts from 1
+        rank = index + 1
         question = faq['question']
         count = faq['total_asked']
         success_rate = faq['success_rate']
         
-        # Determine status color based on success rate
         if success_rate >= 80:
-            status_color = "#4caf50"  # Green for high success
+            status_color = "#4caf50"
             status_icon = "✅"
         elif success_rate >= 50:
-            status_color = "#ff9800"  # Orange for medium success
+            status_color = "#ff9800"
             status_icon = "⚠️"
         else:
-            status_color = "#f44336"  # Red for low success
+            status_color = "#f44336"
             status_icon = "❌"
         
-        # Format question for display (capitalize first letter)
         display_question = question.capitalize() if question else "Unknown question"
         
         faq_html += f"""
@@ -1431,6 +1449,44 @@ def get_full_faq_html(faq_list):
                 </td>
             </tr>"""
 
+    not_answered_html = ""
+    for question, count, is_resolved in not_answered_list:
+        query_encoded = quote(question)
+        display_question = question.capitalize() if question else "Unknown question"
+        
+        if is_resolved:
+            status_badge = '<span style="background: #4caf50; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px;">Resolved</span>'
+            row_style = 'opacity: 0.6;'
+        else:
+            status_badge = '<span style="background: #f44336; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px;">Needs Attention</span>'
+            row_style = ''
+        
+        not_answered_html += f"""
+            <tr style="{row_style}">
+                <td style="padding: 15px;">
+                    <div style="font-weight: 500; font-size: 16px; margin-bottom: 5px;">
+                        {display_question}
+                    </div>
+                    <div style="color: var(--muted); font-size: 14px;">
+                        Asked {count} time{'s' if count != 1 else ''}
+                    </div>
+                </td>
+                <td style="text-align: center; padding: 15px;">{status_badge}</td>
+                <td style="padding: 15px; text-align: center;">
+                    <a href="/admin/custom-info/add?prefill_topic={query_encoded}" 
+                       class="btn btn-success" style="font-size: 13px; padding: 8px 12px;">Add Info</a>
+                    {'' if is_resolved else f'''
+                    <form method="post" action="/admin/mark-resolved" style="display: inline;">
+                        <input type="hidden" name="question" value="{question}">
+                        <button type="submit" class="btn btn-secondary" style="font-size: 13px; padding: 8px 12px;"
+                                onclick="return confirm('Mark this question as resolved?')">
+                            Mark Resolved
+                        </button>
+                    </form>
+                    '''}
+                </td>
+            </tr>"""
+
     return f"""
     <!DOCTYPE html>
     <html lang="en">
@@ -1438,40 +1494,87 @@ def get_full_faq_html(faq_list):
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Frequently Asked Questions</title>
-        <style>{get_base_style()}</style>
+        <style>
+            {get_base_style()}
+            
+            .faq-grid {{
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 20px;
+                margin-top: 20px;
+            }}
+            
+            @media (max-width: 1024px) {{
+                .faq-grid {{
+                    grid-template-columns: 1fr;
+                }}
+            }}
+        </style>
     </head>
     <body>
         <div class="container">
             {get_nav_html()}
             
-            <h1>Frequently Asked Questions</h1>
+            <h1>FAQ Analysis</h1>
             
-            <div class="card faq-table">
-                <div class="faq-header">
-                    <h2 style="margin: 0; color: white;">Most Popular Questions</h2>
-                    <p style="margin: 10px 0 0 0; opacity: 0.9;">Questions asked by students, ranked by frequency</p>
+            <div class="faq-grid">
+                <!-- LEFT: Most Popular Questions -->
+                <div class="card faq-table">
+                    <div class="faq-header">
+                        <h2 style="margin: 0; color: white;">Most Popular Questions</h2>
+                        <p style="margin: 10px 0 0 0; opacity: 0.9;">Questions asked by students, ranked by frequency</p>
+                    </div>
+                    
+                    <div class="faq-stats">
+                        Showing {len(faq_list)} frequently asked questions (asked 2+ times each)
+                    </div>
+                    
+                    <div class="table-container">
+                        <table style="margin: 0;">
+                            <tr style="background: #fafafa; border-bottom: 2px solid #e0e0e0;">
+                                <th style="text-align: center; width: 60px; padding: 15px;">Rank</th>
+                                <th style="padding: 15px;">Question</th>
+                                <th style="text-align: center; width: 80px; padding: 15px;">Status</th>
+                            </tr>
+                            {faq_html if faq_html else '''
+                            <tr>
+                                <td colspan="3" style="text-align: center; padding: 40px; color: var(--muted); font-style: italic;">
+                                    No frequently asked questions yet.<br>
+                                    Questions need to be asked at least twice to appear here.
+                                </td>
+                            </tr>
+                            '''}
+                        </table>
+                    </div>
                 </div>
                 
-                <div class="faq-stats">
-                    Showing {len(faq_list)} frequently asked questions (asked 2+ times each)
-                </div>
-                
-                <div class="table-container">
-                    <table style="margin: 0;">
-                        <tr style="background: #fafafa; border-bottom: 2px solid #e0e0e0;">
-                            <th style="text-align: center; width: 60px; padding: 15px;">Rank</th>
-                            <th style="padding: 15px;">Question</th>
-                            <th style="text-align: center; width: 80px; padding: 15px;">Status</th>
-                        </tr>
-                        {faq_html if faq_html else '''
-                        <tr>
-                            <td colspan="3" style="text-align: center; padding: 40px; color: var(--muted); font-style: italic;">
-                                No frequently asked questions yet.<br>
-                                Questions need to be asked at least twice to appear here.
-                            </td>
-                        </tr>
-                        '''}
-                    </table>
+                <!-- RIGHT: Unanswered Questions -->
+                <div class="card faq-table">
+                    <div class="faq-header" style="background: linear-gradient(135deg, #f44336, #d32f2f);">
+                        <h2 style="margin: 0; color: white;">Unanswered Questions</h2>
+                        <p style="margin: 10px 0 0 0; opacity: 0.9;">Questions where the chatbot could not provide an answer</p>
+                    </div>
+                    
+                    <div class="faq-stats">
+                        Showing {len(not_answered_list)} unanswered questions
+                    </div>
+                    
+                    <div class="table-container">
+                        <table style="margin: 0;">
+                            <tr style="background: #fafafa; border-bottom: 2px solid #e0e0e0;">
+                                <th style="padding: 15px;">Question</th>
+                                <th style="text-align: center; width: 120px; padding: 15px;">Status</th>
+                                <th style="text-align: center; width: 200px; padding: 15px;">Actions</th>
+                            </tr>
+                            {not_answered_html if not_answered_html else '''
+                            <tr>
+                                <td colspan="3" style="text-align: center; padding: 40px; color: var(--muted); font-style: italic;">
+                                    🎉 Excellent! No unanswered questions at the moment.
+                                </td>
+                            </tr>
+                            '''}
+                        </table>
+                    </div>
                 </div>
             </div>
             
@@ -1496,10 +1599,17 @@ def get_full_faq_html(faq_list):
                         </div>
                     </div>
                     <div>
-                        <h3 style="margin-bottom: 10px;">Improvement Actions:</h3>
-                        <p style="color: var(--muted); margin: 0;">
-                            Questions with low success rates show an "Add Info" button to help improve chatbot responses.
-                        </p>
+                        <h3 style="margin-bottom: 10px;">Unanswered Status:</h3>
+                        <div style="display: flex; flex-direction: column; gap: 8px;">
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <span style="background: #f44336; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px;">Needs Attention</span>
+                                <span>Not yet addressed</span>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <span style="background: #4caf50; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px;">Resolved</span>
+                                <span>Marked as handled</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
