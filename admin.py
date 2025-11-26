@@ -1497,8 +1497,22 @@ def get_full_faq_html(faq_list, not_answered_list):
                 </td>
             </tr>"""
 
-    not_answered_html = ""
+    # Build the not answered queries table
+    # Separate resolved and unresolved questions
+    unresolved_questions = []
+    resolved_questions = []
+    
     for question, count, is_resolved in not_answered_list:
+        if is_resolved:
+            resolved_questions.append((question, count, is_resolved))
+        else:
+            unresolved_questions.append((question, count, is_resolved))
+    
+    # Combine: unresolved first (by frequency), then resolved (by frequency)
+    sorted_not_answered = unresolved_questions + resolved_questions
+    
+    not_answered_html = ""
+    for question, count, is_resolved in sorted_not_answered:
         query_encoded = quote(question)
         display_question = question.capitalize() if question else "Unknown question"
         
