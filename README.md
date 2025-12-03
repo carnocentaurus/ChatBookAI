@@ -5,10 +5,8 @@
 ChatBook AI is a cross-platform chatbot app that responds to user questions/queries about Guimaras State University policies, FAQs, and more. It has a dedicated admin panel for information and data management
 
 ## Installations
-1. Download Python 3.10.11
-2. Add Python 3.10.11 in enviroment variables
-3. Setup Flutter: `https://www.youtube.com/watch?v=ASzu_JzcA34`
-4. Download Dependencies in `requirements.txt`
+1. Setup Flutter: `https://www.youtube.com/watch?v=ASzu_JzcA34`
+2. Download Dependencies in `requirements.txt`
 
 ## Usage
 1. Run `uvicorn api:app --host 0.0.0.0 --port 8000` inside `/CapstoneSysteV6/` to start the server
