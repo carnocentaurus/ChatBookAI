@@ -12,6 +12,8 @@ from datetime import datetime  # records the date and time of actions
 from collections import Counter  # counts how many times something appears
 from urllib.parse import quote, unquote  # cleans or restores text used in web links
 from typing import List
+import re
+from difflib import SequenceMatcher
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -35,6 +37,173 @@ def verify_admin(credentials: HTTPBasicCredentials = Depends(security)):
         )
     
     return credentials.username  # if correct, allow access and return the name
+
+
+def normalize_query(query):
+    """Normalize a query by removing common words and standardizing format"""
+    # Convert to lowercase
+    query = query.lower().strip()
+    
+    # Remove common question words and punctuation
+    stop_words = ['what', 'is', 'are', 'the', 'a', 'an', 'how', 'when', 'where', 
+                  'who', 'why', 'can', 'do', 'does', 'did', 'will', 'would', 
+                  'could', 'should', 'about', 'of', 'in', 'on', 'at', 'to', 'for']
+    
+    # Remove punctuation
+    query = re.sub(r'[^\w\s]', '', query)
+    
+    # Split into words and remove stop words
+    words = [w for w in query.split() if w not in stop_words and len(w) > 2]
+    
+    # Sort words alphabetically for better matching
+    return ' '.join(sorted(words))
+
+def extract_key_terms(query):
+    """Extract important terms that shouldn't be ignored (acronyms, names, etc.)"""
+    query_lower = query.lower().strip()
+    query_upper = query.upper().strip()
+    
+    # Find acronyms (all caps words, typically 2-5 letters)
+    acronyms = re.findall(r'\b[A-Z]{2,5}\b', query_upper)
+    
+    # Keep these as key identifiers
+    key_terms = set()
+    
+    # IMPORTANT: Department/college acronyms and program names that must match exactly
+    specific_identifiers = [
+        'cags', 'cst', 'cba', 'coe', 'cas', 'cte', 'coed', 'ced',
+        'bsit', 'bscs', 'bsis', 'bsce', 'bsee', 'bsme', 'bsie', 'bsa', 'bsba',
+        'nursing', 'engineering', 'business', 'arts', 'science', 'education', 
+        'law', 'medicine', 'computer', 'information', 'technology',
+        'undergraduate', 'graduate', 'phd', 'masters', 'bachelor',
+        'admission', 'admissions', 'tuition', 'scholarship', 'financial', 'aid',
+        'vision', 'mission', 'misyon', 'bisyon', 'core', 'values',
+        'dean', 'director', 'head', 'chair', 'president', 'chancellor'
+    ]
+    
+    words = query_lower.split()
+    for word in words:
+        word_clean = re.sub(r'[^\w]', '', word)
+        # Keep acronyms and specific identifiers
+        if word_clean in specific_identifiers or word_clean.upper() in acronyms:
+            key_terms.add(word_clean.lower())
+    
+    return key_terms
+
+def similarity_ratio(query1, query2):
+    """Calculate similarity between two queries"""
+    return SequenceMatcher(None, query1, query2).ratio()
+
+def should_group_queries(query1, query2, threshold=0.80):
+    """
+    Determine if two queries should be grouped together
+    Uses strict matching for key terms and high similarity threshold
+    """
+    query1_lower = query1.lower()
+    query2_lower = query2.lower()
+    
+    # Extract key terms from both queries
+    key_terms1 = extract_key_terms(query1)
+    key_terms2 = extract_key_terms(query2)
+    
+    # RULE 1: If both have key terms, they MUST share at least one
+    if key_terms1 and key_terms2:
+        if not key_terms1.intersection(key_terms2):
+            return False
+    
+    # RULE 2: Special handling for position + entity combinations
+    # e.g., "dean of CAGS" vs "dean of CST" should NOT match
+    position_words = ['dean', 'director', 'head', 'chair', 'president', 'chancellor']
+    has_position1 = any(pos in query1_lower for pos in position_words)
+    has_position2 = any(pos in query2_lower for pos in position_words)
+    
+    if has_position1 and has_position2:
+        # Both queries are about positions - they must have identical key terms
+        if key_terms1 != key_terms2:
+            return False
+    
+    # RULE 3: Program-specific queries (BSIT, BSCS, etc.) must match exactly
+    program_pattern = r'\b(bs\w{2,4}|ba\w{2,4}|ms\w{2,4}|ma\w{2,4}|phd)\b'
+    programs1 = set(re.findall(program_pattern, query1_lower))
+    programs2 = set(re.findall(program_pattern, query2_lower))
+    
+    if programs1 and programs2:
+        if programs1 != programs2:
+            return False
+    
+    # RULE 4: Mission/Vision should not be grouped together
+    vision_words = ['vision', 'bisyon']
+    mission_words = ['mission', 'misyon']
+    
+    has_vision1 = any(v in query1_lower for v in vision_words)
+    has_mission1 = any(m in query1_lower for m in mission_words)
+    has_vision2 = any(v in query2_lower for v in vision_words)
+    has_mission2 = any(m in query2_lower for m in mission_words)
+    
+    if (has_vision1 and has_mission2) or (has_mission1 and has_vision2):
+        return False
+    
+    # RULE 5: Finally check text similarity with higher threshold
+    norm1 = normalize_query(query1)
+    norm2 = normalize_query(query2)
+    
+    if similarity_ratio(norm1, norm2) >= threshold:
+        return True
+    
+    return False
+
+def group_similar_queries(queries_with_counts, threshold=0.75):
+    """
+    Group similar queries together with improved logic
+    
+    Args:
+        queries_with_counts: List of (query, count) tuples
+        threshold: Similarity threshold (0.0 to 1.0), default 0.75
+    
+    Returns:
+        List of grouped queries with combined counts
+    """
+    if not queries_with_counts:
+        return []
+    
+    groups = []
+    processed = set()
+    
+    queries_list = list(queries_with_counts)
+    
+    for i, (query1, count1) in enumerate(queries_list):
+        if query1 in processed:
+            continue
+            
+        # Start a new group with this query
+        group = {
+            'queries': [(query1, count1)],
+            'total_count': count1
+        }
+        processed.add(query1)
+        
+        # Find similar queries to add to this group
+        for j, (query2, count2) in enumerate(queries_list):
+            if j <= i or query2 in processed:
+                continue
+            
+            # Check if queries should be grouped
+            if should_group_queries(query1, query2, threshold):
+                # Add this query to the group
+                group['queries'].append((query2, count2))
+                group['total_count'] += count2
+                processed.add(query2)
+        
+        # Choose the most common original query as the representative
+        group['queries'].sort(key=lambda x: x[1], reverse=True)
+        group['representative'] = group['queries'][0][0]  # Most asked version
+        
+        groups.append(group)
+    
+    # Sort groups by total count
+    groups.sort(key=lambda x: x['total_count'], reverse=True)
+    
+    return groups
 
 
 # Attach all admin-related routes to the FastAPI app
@@ -179,65 +348,94 @@ def setup_admin_routes(app, memory, LOG_FILE, MEMORY_DB):
 
     @app.get("/admin/faq", response_class=HTMLResponse)
     async def admin_faq(credentials: HTTPBasicCredentials = Depends(verify_admin)):
-        """Shows a full list of frequently asked questions from user logs"""
+        """Shows a full list of frequently asked questions with smart grouping"""
 
         try:
             with open(LOG_FILE, "r", encoding="utf-8") as f:
                 reader = list(csv.DictReader(f))
 
-            # ===== FREQUENTLY ASKED QUESTIONS (asked 2+ times) =====
+            # ===== FREQUENTLY ASKED QUESTIONS (asked 2+ times) with GROUPING =====
             query_counter = Counter(
                 (r.get("query_text") or "").strip().lower() for r in reader if r.get("query_text")
             )
     
+            # Get queries asked 2+ times
             frequent_questions = [(q, count) for q, count in query_counter.most_common() if count >= 2]
+        
+            # Group similar queries together (with strict matching)
+            grouped_queries = group_similar_queries(frequent_questions, threshold=0.80)
 
             faq_list = []
-
-            for question, count in frequent_questions:
-                question_entries = [r for r in reader if (r.get("query_text") or "").strip().lower() == question]
         
+            for group in grouped_queries:
+                representative_query = group['representative']
+                total_count = group['total_count']
+            
+                # Calculate success rate across all variants in the group
                 answered_count = 0
-                for entry in question_entries:
-                    answered_field = (entry.get("answered") or "").strip().lower()
-                    if answered_field in ["true", "1", "yes"]:
-                        answered_count += 1
-
-                success_rate = (answered_count / count * 100) if count > 0 else 0
+                for variant_query, _ in group['queries']:
+                    question_entries = [r for r in reader if (r.get("query_text") or "").strip().lower() == variant_query]
+                
+                    for entry in question_entries:
+                        answered_field = (entry.get("answered") or "").strip().lower()
+                        if answered_field in ["true", "1", "yes"]:
+                            answered_count += 1
+            
+                success_rate = (answered_count / total_count * 100) if total_count > 0 else 0
+            
+                # Show variants if there are multiple
+                variants_text = ""
+                if len(group['queries']) > 1:
+                    other_variants = [q for q, _ in group['queries'] if q != representative_query][:3]
+                    if other_variants:
+                        variants_text = f" (Similar: {', '.join(other_variants[:2])}{'...' if len(other_variants) > 2 else ''})"
 
                 faq_data = {
-                    "question": question,
-                    "total_asked": count,
+                    "question": representative_query,
+                    "total_asked": total_count,
                     "answered_count": answered_count,
-                    "success_rate": success_rate
+                    "success_rate": success_rate,
+                    "variants": variants_text
                 }
                 faq_list.append(faq_data)
 
-            # ===== UNANSWERED QUESTIONS (all questions not answered) =====
+            # ===== UNANSWERED QUESTIONS (with grouping) =====
             not_answered_counter = Counter()
         
             for record in reader:
                 answered_field = (record.get("answered") or "").strip().lower()
                 query_text = (record.get("query_text") or "").strip().lower()
             
-                # Only count if not answered
                 if answered_field not in ["true", "1", "yes"] and query_text:
                     not_answered_counter[query_text] += 1
         
+            # Group unanswered queries (with strict matching)
+            unanswered_list = [(q, c) for q, c in not_answered_counter.most_common()]
+            grouped_unanswered = group_similar_queries(unanswered_list, threshold=0.80)
+        
             # Build list with resolved status
             not_answered_list = []
-            for question, count in not_answered_counter.most_common():
-                # Check if this question has been marked as resolved
-                question_records = [r for r in reader if (r.get("query_text") or "").strip().lower() == question]
-                is_resolved = any((r.get("resolved_date") or "").strip() for r in question_records)
+            for group in grouped_unanswered:
+                representative_query = group['representative']
+                total_count = group['total_count']
             
-                not_answered_list.append((question, count, is_resolved))
+                # Check if ANY variant has been marked as resolved
+                is_resolved = False
+                for variant_query, _ in group['queries']:
+                    question_records = [r for r in reader if (r.get("query_text") or "").strip().lower() == variant_query]
+                    if any((r.get("resolved_date") or "").strip() for r in question_records):
+                        is_resolved = True
+                        break
+            
+                not_answered_list.append((representative_query, total_count, is_resolved))
 
         except FileNotFoundError:
             faq_list = []
             not_answered_list = []
         except Exception as e:
             print(f"Error in admin_faq: {e}")
+            import traceback
+            traceback.print_exc()
             faq_list = []
             not_answered_list = []
 
@@ -1449,6 +1647,7 @@ def get_full_faq_html(faq_list, not_answered_list):
         question = faq['question']
         count = faq['total_asked']
         success_rate = faq['success_rate']
+        variants = faq.get('variants', '')  # Get variant info if available
         
         if success_rate >= 80:
             status_color = "#4caf50"
@@ -1487,7 +1686,7 @@ def get_full_faq_html(faq_list, not_answered_list):
                         {display_question}
                     </div>
                     <div style="color: var(--muted); font-size: 14px;">
-                        Asked {count} time{'s' if count != 1 else ''} • {success_rate:.1f}% success rate
+                        Asked {count} time{'s' if count != 1 else ''} • {success_rate:.1f}% success rate{variants}
                     </div>
                 </td>
                 <td style="text-align: center; width: 80px;">
