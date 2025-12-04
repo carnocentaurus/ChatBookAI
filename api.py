@@ -35,6 +35,9 @@ from langchain_huggingface import HuggingFaceEmbeddings  # Converts text into em
 from langchain_chroma import Chroma  # Local vector database (stores and retrieves documents)
 from langchain.docstore.document import Document  # Represents text documents in LangChain
 
+from difflib import SequenceMatcher
+from fuzzywuzzy import fuzz
+
 # admin
 from admin import setup_admin_routes  # Imports routes for admin panel (feedback, reports, etc.)
 
@@ -372,23 +375,61 @@ class ChatbotMemory:
 
     # checks if the user’s question relates to any of the custom information stored by an admin.
     def get_relevant_custom_info(self, query: str) -> str:
+        """
+        Get relevant custom info with fuzzy matching support
+        Now handles typos and variations in queries
+        """
         try:
-            relevant = []  # Store matches
-            clean_query = sanitize_text(query.lower())  # Clean query text
-            
-            # self.custom_info is a dictionary that holds all manually added data (from custom_info.json)
+            relevant = []
+            clean_query = sanitize_text(query.lower())
+        
+            # Normalize query for better matching
+            normalized_query = normalize_query_text(clean_query)
+        
             for info in self.custom_info.values():
                 clean_topic = sanitize_text(info['topic'].lower())
+                match_score = 0
+            
+                # Method 1: Direct substring match (highest priority)
+                if clean_topic in clean_query or clean_topic in normalized_query:
+                    match_score = 100
+            
+                # Method 2: Check if query contains any word from topic
+                elif any(word in clean_query for word in clean_topic.split() if len(word) > 3):
+                    match_score = 80
+            
+                # Method 3: Fuzzy matching on topic
+                else:
+                    # Check fuzzy similarity with entire topic
+                    topic_similarity = fuzz.partial_ratio(clean_topic, normalized_query)
                 
-                # even partial matches (like one word) will trigger a match
-                if (clean_topic in clean_query or 
-                    any(word in clean_query for word in clean_topic.split())):
+                    if topic_similarity >= 70:
+                        match_score = topic_similarity
+                    else:
+                        # Check each word in the topic against query
+                        topic_words = [w for w in clean_topic.split() if len(w) > 3]
+                        query_words = [w for w in normalized_query.split() if len(w) > 3]
+                    
+                        for topic_word in topic_words:
+                            for query_word in query_words:
+                                word_similarity = fuzz.ratio(topic_word, query_word)
+                                if word_similarity >= 80:  # High threshold for word matching
+                                    match_score = max(match_score, word_similarity)
+            
+                # If we have a good match, add it to results
+                if match_score >= 70:
                     clean_information = sanitize_text(info['information'])
-                    # adds a formatted text to the list
-                    relevant.append(f"ADDITIONAL INFO: {info['topic']}: {clean_information}")
-            
-            return "\n".join(relevant) if relevant else ""  # Return joined string or empty
-            
+                    relevant.append({
+                        'text': f"ADDITIONAL INFO: {info['topic']}: {clean_information}",
+                        'score': match_score
+                    })
+        
+            # Sort by match score (highest first)
+            relevant.sort(key=lambda x: x['score'], reverse=True)
+        
+            # Return top 3 matches
+            return "\n".join([item['text'] for item in relevant[:3]]) if relevant else ""
+        
         except Exception as e:
             print(f"❌ Error getting custom info: {e}")
             return ""
@@ -445,67 +486,181 @@ def extract_keywords(query):
     return [w for w in words if w not in stop_words and len(w) > 2]
 
 
-# Multi-strategy retrieval for comprehensive results
-async def smart_retrieval(query, retriever, handbook_text):
-    all_chunks = set()  # Stores retrieved chunks (avoids duplicates using a set)
+def fuzzy_query_expansion(query):
+    """
+    Expand query with fuzzy matching for common GSU terms
+    Handles typos and variations in phrasing
+    """
+    query_lower = query.lower()
     
-    # First strategy: use vector retriever (if available)
+    # Dictionary of common terms and their variations (including common typos)
+    fuzzy_terms = {
+        'vision': ['vision', 'bisyon', 'bision', 'vission', 'visyon', 'vison'],
+        'mission': ['mission', 'misyon', 'mision', 'missyon', 'misson'],
+        'core values': ['core values', 'values', 'core value', 'corevalues', 'cor values'],
+        'admission': ['admission', 'admision', 'admissions', 'admissyon', 'addmission'],
+        'tuition': ['tuition', 'tuision', 'tution', 'tusyon', 'tuition fee'],
+        'scholarship': ['scholarship', 'scolarship', 'schollarship', 'skolarship'],
+        'requirements': ['requirements', 'requirement', 'requirments', 'requiremnt'],
+        'enrollment': ['enrollment', 'enrolment', 'enrollmnt', 'enrollment process'],
+        'dean': ['dean', 'deen', 'dian'],
+        'director': ['director', 'direktor', 'dirctor'],
+        'president': ['president', 'pressydent', 'presydent'],
+    }
+    
+    expanded_terms = []
+    
+    # Check for each term in the query
+    for standard_term, variations in fuzzy_terms.items():
+        for variation in variations:
+            # Check if variation appears in query or is close match
+            if variation in query_lower:
+                expanded_terms.append(standard_term)
+                break
+            else:
+                # Use fuzzy matching for typos (80% similarity)
+                similarity = fuzz.ratio(variation, query_lower)
+                if similarity >= 80:
+                    expanded_terms.append(standard_term)
+                    break
+    
+    # Also check word-by-word for partial matches
+    query_words = query_lower.split()
+    for word in query_words:
+        for standard_term, variations in fuzzy_terms.items():
+            for variation in variations:
+                # Check similarity of individual words
+                if len(word) > 3 and fuzz.ratio(word, variation) >= 85:
+                    if standard_term not in expanded_terms:
+                        expanded_terms.append(standard_term)
+                    break
+    
+    # Return expanded query with matched terms
+    if expanded_terms:
+        return query + ' ' + ' '.join(expanded_terms)
+    
+    return query
+
+
+def normalize_query_text(query):
+    """
+    Normalize query by fixing common typos and standardizing terms
+    """
+    query = query.lower().strip()
+    
+    # Common typo corrections
+    corrections = {
+        'bision': 'vision',
+        'bisyon': 'vision',
+        'vission': 'vision',
+        'visyon': 'vision',
+        'mision': 'mission',
+        'missyon': 'mission',
+        'misyon': 'mission',
+        'admision': 'admission',
+        'addmission': 'admission',
+        'tution': 'tuition',
+        'tuision': 'tuition',
+        'scolarship': 'scholarship',
+        'schollarship': 'scholarship',
+        'requirments': 'requirements',
+        'enrollmnt': 'enrollment',
+        'enrolment': 'enrollment',
+    }
+    
+    # Split query into words
+    words = query.split()
+    corrected_words = []
+    
+    for word in words:
+        # Remove punctuation for matching
+        word_clean = word.strip('.,!?;:')
+        
+        # Check if word needs correction
+        if word_clean in corrections:
+            corrected_words.append(corrections[word_clean])
+        else:
+            corrected_words.append(word)
+    
+    return ' '.join(corrected_words)
+
+
+def smart_query_preprocessing(query):
+    """
+    Preprocess query with normalization and fuzzy expansion
+    This should be called before retrieval
+    """
+    # Step 1: Normalize and fix typos
+    normalized = normalize_query_text(query)
+    
+    # Step 2: Expand with fuzzy matching
+    expanded = fuzzy_query_expansion(normalized)
+    
+    # Step 3: Add GSU synonyms (existing function)
+    final_query = expand_query(expanded)
+    
+    return final_query
+
+
+async def smart_retrieval(query, retriever, handbook_text):
+    """Multi-strategy retrieval with fuzzy matching support"""
+    all_chunks = set()
+    
+    # Preprocess query with fuzzy matching
+    processed_query = smart_query_preprocessing(query)
+    
     if retriever:
         try:
-            # Run retriever in a background thread (so async is not blocked)
-            docs = await asyncio.get_event_loop().run_in_executor(executor, retriever.invoke, query)
+            # Use processed query for retrieval
+            docs = await asyncio.get_event_loop().run_in_executor(
+                executor, retriever.invoke, processed_query
+            )
             
-            # Add each retrieved doc to all_chunks with its content + chunk_id
             for doc in docs:
                 all_chunks.add((doc.page_content, doc.metadata.get('chunk_id', 0)))
             
-            # Expand query with synonyms
-            expanded = expand_query(query)
-            if expanded != query:  # Only if query was expanded
-                # Run retriever again with expanded query
-                docs = await asyncio.get_event_loop().run_in_executor(executor, retriever.invoke, expanded)
-                for doc in docs:
+            # Also try with original query in case preprocessing was too aggressive
+            if processed_query != query:
+                docs_original = await asyncio.get_event_loop().run_in_executor(
+                    executor, retriever.invoke, query
+                )
+                for doc in docs_original:
                     all_chunks.add((doc.page_content, doc.metadata.get('chunk_id', 0)))
+                    
         except Exception as e:
-            print(f"Retrieval error: {e}")  # Log retrieval errors, don’t crash
+            print(f"Retrieval error: {e}")
     
-    # Second strategy: keyword-based fallback search in raw handbook text
-    if len(all_chunks) < 8 and handbook_text:  # Only if retriever gave few results
-        keywords = extract_keywords(query)  # Extract keywords from query
-        # Split handbook into sentences longer than 20 characters
+    # Keyword-based fallback (use processed query)
+    if len(all_chunks) < 8 and handbook_text:
+        keywords = extract_keywords(processed_query)
         sentences = [s.strip() for s in handbook_text.split('.') if len(s.strip()) > 20]
         
-        scored_sentences = []  # Will store (sentence, score)
+        scored_sentences = []
         for sentence in sentences:
             sentence_lower = sentence.lower()
             score = 0
             
-            # Boost score if entire query appears in sentence
-            if query.lower() in sentence_lower:
+            # Check both processed and original query
+            if processed_query.lower() in sentence_lower or query.lower() in sentence_lower:
                 score += 25
             
-            # Boost score for each keyword match
             for keyword in keywords:
                 if keyword in sentence_lower:
-                    score += len(keyword) + 2  # Longer keyword = more weight
+                    score += len(keyword) + 2
             
-            # Only keep sentences with decent score
             if score > 5:
                 scored_sentences.append((sentence, score))
         
-        # Sort by score descending
         scored_sentences.sort(key=lambda x: x[1], reverse=True)
-        # Keep top 15 relevant sentences
         for sentence, _ in scored_sentences[:15]:
-            all_chunks.add((sentence, 999))  # Uses chunk_id = 999 to label these as keyword-based chunks
+            all_chunks.add((sentence, 999))
     
-    # all found chunks from both strategies are converted into standard Document objects that LangChain can process
     result_docs = []
     for content, chunk_id in all_chunks:
         doc = Document(page_content=content, metadata={"chunk_id": chunk_id})
         result_docs.append(doc)
     
-    return result_docs  # Final set of retrieved docs
+    return result_docs
 
 
 # Build context including memory and custom info (minimal conversation history)
