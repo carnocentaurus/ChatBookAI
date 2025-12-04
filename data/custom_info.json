@@ -64,11 +64,6 @@
     "information": "Baterna Campus:\r\nThe Baterna Campus of Guimaras State University (GSU) is located in Constancia, San Lorenzo, Guimaras, Philippines. It primarily serves as the home for the university's College of Agricultural Sciences (CAgS).\r\n\r\nBaterna Campus Colleges:\r\n1. College of Agricultural Sciences (CAGS).\r\n\r\nBaterna Campus Courses:\r\n1. Bachelor of Science in Agriculture (Board Course)\r\n2. Bachelor of Science in Food Technology\r\n3. Bachelor of Science in Fisheries (Board Course)",
     "added_at": "2025-09-07T07:00:37.931105"
   },
-  "quality_policy_14": {
-    "topic": "quality policy",
-    "information": "Guimaras State University (GSU) aims to have an effective and efficient implementation of its quality management system along with its vision, mission and core values. To achieve this, GSU will produce globally competitive, technologically-equipped and research-oriented graduates of quality and innovative advanced and higher education programs in sustainable agriculture, fisheries, forestry and tourism, entrepreneurship, liberal arts, education, healthcare, science and good governance. It shall endeavor to continually improve its quality management system, satisfying applicable requirements of the standard, addressing risks and maximizing opportunities. Further, the top Management pledges to inspire a university-wide commitment to this Policy and ensure to regularly review and monitor strategic implementation of the Quality Management System in all levels of the organization for customer’s satisfaction and continual improvement.",
-    "added_at": "2025-09-07T07:02:58.342866"
-  },
   "core_values_15": {
     "topic": "core values",
     "information": "a. God-Fearing\r\nb. People Centered\r\nc. Pro – Environment\r\nd. Selfless Public Service\r\ne. Respect for Human Dignity",
@@ -438,5 +433,10 @@
     "topic": "capstone coordinator",
     "information": "Sir James Ryan Ga",
     "added_at": "2025-11-17T08:13:30.728295"
+  },
+  "quality_policy": {
+    "topic": "quality policy",
+    "information": "Guimaras State University (GSU) aims to have an effective and efficient implementation of its quality management system along with its vision, mission and core values.\r\n\r\nTo achieve this, Guimaras State University will produce globally competitive, technologically-equipped and research-oriented graduates of quality and innovative advanced and higher education programs in sustainable agriculture, fisheries, forestry and tourism, entrepreneurship, liberal arts, education, healthcare, science and good governance. It shall endeavor to continually improve its quality management system, satisfying applicable requirements of the standard, addressing risks and maximizing opportunities.\r\n\r\nFurther, the top Management pledges to inspire a university-wide commitment to this Policy and ensure to regularly review and monitor strategic implementation of the Quality Management System in all levels of the organization for customer’s satisfaction and continual improvement.",
+    "added_at": "2025-12-01T13:09:42.362362"
   }
 }
