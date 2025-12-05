@@ -440,7 +440,7 @@ rm -rf data/chroma_db/
 # Restart server - will rebuild automatically
 ```
 
-## 📚 Additional Resources
+## Additional Resources
 
 - [FastAPI Documentation](https://fastapi.tiangolo.com/)
 - [Google Gemini API](https://ai.google.dev/)
@@ -543,7 +543,3 @@ For issues or questions:
 - Flutter mobile app
 - Vector search with ChromaDB 0.5.6+
 - HuggingFace embeddings integration
-
-**Built for Guimaras State University** 🎓
-
-*Empowering students with instant, accurate information.*
