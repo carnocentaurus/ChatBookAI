@@ -58,7 +58,7 @@ ChatBook AI is a conversational assistant built specifically for GSU students, f
 - **Google Gemini API Key**: Get from [Google AI Studio](https://makersuite.google.com/app/apikey)
 - **LangSmith Account**: For monitoring (optional but recommended)
 
-## 🚀 Installation
+## Installation
 
 ### 1. Clone the Repository
 
@@ -151,18 +151,14 @@ The server will:
 - API Report: `http://localhost:8000/report`
 
 ### Start the Flutter App
-
 ```bash
 cd FlutterApp
 flutter run
 ```
-
 Or build for production:
-
 ```bash
 # Android
 flutter build apk
-
 # iOS
 flutter build ios
 ```
@@ -218,7 +214,6 @@ Access the admin panel at: `http://localhost:8000/admin`
    - Average ratings
 
 ## Project Structure
-
 ```
 CapstoneSystemV6/
 ├── api.py                      # Main FastAPI application
@@ -241,9 +236,7 @@ CapstoneSystemV6/
 ## Configuration
 
 ### Adjusting AI Parameters
-
-In `api.py`, modify the `generation_config`:
-
+In `api.py`, modify the `generation_config`
 ```python
 generation_config = genai.types.GenerationConfig(
     temperature=0.1,      # Lower = more focused (0.0-1.0)
@@ -254,7 +247,6 @@ generation_config = genai.types.GenerationConfig(
 ```
 
 ### Vector Database Settings
-
 In `load_embeddings_and_db()`:
 
 ```python
@@ -264,7 +256,6 @@ batch_size=50,           # Processing batch size
 ```
 
 ### Retrieval Settings
-
 ```python
 search_kwargs={
     "k": 10,             # Number of chunks to retrieve
@@ -302,30 +293,24 @@ search_kwargs={
 ## API Endpoints
 
 ### Public Endpoints
-
 ```
 POST /chat
   - Main chat endpoint
   - Body: { "query": "question", "session_id": "user_session" }
   - Returns: { "answer": "response", "session_id": "session" }
-
 POST /feedback
   - Submit user feedback
   - Body: { "feedback_text": "...", "rating": 5, "user_type": "student" }
-
 GET /health
   - System health check
   - Returns system status
-
 GET /report
   - Public statistics
   - Returns query counts and FAQ
 ```
 
 ### Admin Endpoints
-
 All admin endpoints require HTTP Basic Auth:
-
 ```
 GET  /admin                          # Dashboard
 GET  /admin/custom-info              # Manage information
@@ -420,20 +405,17 @@ GET  /admin/export-data              # Export system data
 ## Updating the System
 
 ### Update Dependencies
-
 ```bash
 pip install --upgrade -r requirements.txt
 ```
 
 ### Backup Data
-
 ```bash
 # Backup important data before updates
 cp -r data/ data_backup/
 ```
 
 ### Reset Vector Database
-
 ```bash
 # If having issues, delete and rebuild
 rm -rf data/chroma_db/
@@ -441,7 +423,6 @@ rm -rf data/chroma_db/
 ```
 
 ## Additional Resources
-
 - [FastAPI Documentation](https://fastapi.tiangolo.com/)
 - [Google Gemini API](https://ai.google.dev/)
 - [LangChain Documentation](https://python.langchain.com/)
@@ -450,7 +431,7 @@ rm -rf data/chroma_db/
 
 ## Development History
 
-### Initial Setup (August 2024)
+### Initial Setup (August 1, 2025)
 1. Set up Python 3.10.11 environment (LangChain compatibility)
 2. Configured environment variables and paths
 3. Explored RAG LLM architectures and implementations
