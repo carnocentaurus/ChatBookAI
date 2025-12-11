@@ -58,6 +58,7 @@ def normalize_query(query):
     # Sort words alphabetically for better matching
     return ' '.join(sorted(words))
 
+
 def extract_key_terms(query):
     """Extract important terms that shouldn't be ignored (acronyms, names, etc.)"""
     query_lower = query.lower().strip()
@@ -152,6 +153,7 @@ def should_group_queries(query1, query2, threshold=0.80):
     
     return False
 
+
 def group_similar_queries(queries_with_counts, threshold=0.75):
     """
     Group similar queries together with improved logic
@@ -163,16 +165,17 @@ def group_similar_queries(queries_with_counts, threshold=0.75):
     Returns:
         List of grouped queries with combined counts
     """
-    if not queries_with_counts:
+    if not queries_with_counts: # checks if empty or false
         return []
     
-    groups = []
-    processed = set()
+    groups = [] # Initialize empty list that will contain the grouped query results
+    processed = set() # Creates a set to track which query strings have already been processed
     
     queries_list = list(queries_with_counts)
     
+    # On each iteration, query1 is the query string and count1 is its associated count
     for i, (query1, count1) in enumerate(queries_list):
-        if query1 in processed:
+        if query1 in processed: # checks whether it has already been grouped earlier
             continue
             
         # Start a new group with this query
@@ -254,6 +257,7 @@ def setup_admin_routes(app, memory, LOG_FILE, MEMORY_DB):
     async def admin_custom_info(credentials: HTTPBasicCredentials = Depends(verify_admin)):  # Make sure admin is logged in
         # Admin page for viewing and managing saved info
         return HTMLResponse(content=get_custom_info_html(memory.custom_info))  # Show the page with all current info
+    
 
     @app.get("/admin/custom-info/add", response_class=HTMLResponse)  # Page for adding new custom info
     async def admin_add_info_form(
@@ -263,6 +267,7 @@ def setup_admin_routes(app, memory, LOG_FILE, MEMORY_DB):
         # Show the form to add new info
         prefilled_topic = unquote(prefill_topic) if prefill_topic else ""  # If there’s a topic, show it in the form
         return HTMLResponse(content=get_add_custom_info_form_html(prefilled_topic))  # Display the form page
+    
 
     @app.post("/admin/custom-info/add")  # When admin submits the form, this handles it
     async def admin_add_info(
@@ -274,6 +279,7 @@ def setup_admin_routes(app, memory, LOG_FILE, MEMORY_DB):
         memory.add_custom_info(topic, information) # Save the topic and info
         # 303 = redirect client
         return RedirectResponse(url="/admin/custom-info", status_code=303)  # Go back to the list after adding
+    
     
     @app.get("/admin/custom-info/delete/{info_id}")
     async def admin_delete_info(
@@ -355,7 +361,8 @@ def setup_admin_routes(app, memory, LOG_FILE, MEMORY_DB):
                 reader = list(csv.DictReader(f))
 
             # ===== FREQUENTLY ASKED QUESTIONS (asked 2+ times) with GROUPING =====
-            query_counter = Counter(
+            query_counter = Counter( # Count how many times each query occurs
+                # Only count rows with a query text
                 (r.get("query_text") or "").strip().lower() for r in reader if r.get("query_text")
             )
     
@@ -367,16 +374,17 @@ def setup_admin_routes(app, memory, LOG_FILE, MEMORY_DB):
 
             faq_list = []
         
-            for group in grouped_queries:
+            for group in grouped_queries: # Process each grouped question set
                 representative_query = group['representative']
-                total_count = group['total_count']
+                total_count = group['total_count'] # Total combined frequency of the group
             
                 # Calculate success rate across all variants in the group
                 answered_count = 0
                 for variant_query, _ in group['queries']:
+                    # Filter rows matching this variant
                     question_entries = [r for r in reader if (r.get("query_text") or "").strip().lower() == variant_query]
                 
-                    for entry in question_entries:
+                    for entry in question_entries: # Inspect each matched log entry
                         answered_field = (entry.get("answered") or "").strip().lower()
                         if answered_field in ["true", "1", "yes"]:
                             answered_count += 1
@@ -385,9 +393,10 @@ def setup_admin_routes(app, memory, LOG_FILE, MEMORY_DB):
             
                 # Show variants if there are multiple
                 variants_text = ""
-                if len(group['queries']) > 1:
+                if len(group['queries']) > 1: # Show variants only if more than one exists
                     other_variants = [q for q, _ in group['queries'] if q != representative_query][:3]
                     if other_variants:
+                        # Limit to max 3 variants
                         variants_text = f" (Similar: {', '.join(other_variants[:2])}{'...' if len(other_variants) > 2 else ''})"
 
                 faq_data = {
@@ -402,7 +411,7 @@ def setup_admin_routes(app, memory, LOG_FILE, MEMORY_DB):
             # ===== UNANSWERED QUESTIONS (with grouping) =====
             not_answered_counter = Counter()
         
-            for record in reader:
+            for record in reader: # Iterate over all log rows
                 answered_field = (record.get("answered") or "").strip().lower()
                 query_text = (record.get("query_text") or "").strip().lower()
             
@@ -417,12 +426,14 @@ def setup_admin_routes(app, memory, LOG_FILE, MEMORY_DB):
             not_answered_list = []
             for group in grouped_unanswered:
                 representative_query = group['representative']
-                total_count = group['total_count']
+                total_count = group['total_count'] # Total times this group was asked
             
                 # Check if ANY variant has been marked as resolved
                 is_resolved = False
                 for variant_query, _ in group['queries']:
+                    # Get log rows for each variant
                     question_records = [r for r in reader if (r.get("query_text") or "").strip().lower() == variant_query]
+                    # If any variant has resolved date
                     if any((r.get("resolved_date") or "").strip() for r in question_records):
                         is_resolved = True
                         break
@@ -585,10 +596,11 @@ def setup_admin_routes(app, memory, LOG_FILE, MEMORY_DB):
     ):
         """Mark multiple queries as resolved at once"""
         try:
-            with open(LOG_FILE, "r", encoding="utf-8") as f:
-                reader = list(csv.DictReader(f))
+            with open(LOG_FILE, "r", encoding="utf-8") as f:  # Open the CSV log file for reading
+                reader = list(csv.DictReader(f)) # Load CSV rows into list of dicts
 
-            fieldnames = reader[0].keys() if reader else []
+            fieldnames = reader[0].keys() if reader else [] # Extract CSV column names (if any rows exist)
+            # Add the column if missing
             if 'resolved_date' not in fieldnames:
                 fieldnames = list(fieldnames) + ['resolved_date']
 
@@ -600,11 +612,11 @@ def setup_admin_routes(app, memory, LOG_FILE, MEMORY_DB):
                 query_text = record.get("query_text", "").strip().lower()
             
                 # Check if this record matches any of the selected queries
-                if query_text in [q.lower() for q in selected_queries]:
-                    if not record.get("resolved_date", "").strip():
+                if query_text in [q.lower() for q in selected_queries]:  # Compare with selected list
+                    if not record.get("resolved_date", "").strip():  # If no resolved date yet
                         record["resolved_date"] = today
                         updated_count += 1
-                    elif "resolved_date" not in record:
+                    elif "resolved_date" not in record: # Handle missing field
                         record["resolved_date"] = today
                         updated_count += 1
 
@@ -612,7 +624,7 @@ def setup_admin_routes(app, memory, LOG_FILE, MEMORY_DB):
             if reader:
                 with open(LOG_FILE, "w", newline="", encoding="utf-8") as f:
                     writer = csv.DictWriter(f, fieldnames=fieldnames)
-                    writer.writeheader()
+                    writer.writeheader() # Write header row
                     writer.writerows(reader)
 
             print(f"✅ Bulk resolved {updated_count} query instances across {len(selected_queries)} unique questions")
@@ -1031,7 +1043,7 @@ def get_updated_dashboard_html(
         query_text = query.get('query_text', '')
         query_display = query_text[:80] + ('...' if len(query_text) > 80 else '')
         
-        # Get the response text (column name is 'answer_text' in your CSV)
+        # Get the response text (column name is 'answer_text' in the CSV)
         response_text = query.get('answer_text', 'No response recorded')
         response_display = response_text[:100] + ('...' if len(response_text) > 100 else '')
         
@@ -1112,233 +1124,6 @@ def get_updated_dashboard_html(
                             <th>Status</th>
                         </tr>
                         {recent_queries_html if recent_queries_html else '<tr><td colspan="4" style="text-align: center; color: var(--muted);">No recent queries</td></tr>'}
-                    </table>
-                </div>
-            </div>
-        </div>
-    </body>
-    </html>
-    """
-    """Generate HTML for Custom Information management page with responsive design"""
- 
-    # .items() returns a list of (key, value) pairs
-    sorted_info = sorted(custom_info.items(), key=lambda x: x[1]['added_at'], reverse=True)
-
-    info_html = ""
-    for info_id, info in sorted_info:
-        topic = info['topic']
-        information = info['information'][:100] + ('...' if len(info['information']) > 100 else '')
-        added = info['added_at'][:10] # first 10 chars of a timestamp like 2025-10-18
-        
-        info_html += f"""
-            <tr>
-                <td>{topic}</td>
-                <td>{information}</td>
-                <td>{added}</td>
-                <td>
-                    <a href="/admin/custom-info/delete/{info_id}" class="btn btn-danger" 
-                       onclick="return confirm('Delete this information?')">Delete</a>
-                </td>
-            </tr>"""
-    
-    return f"""
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Manage Information</title>
-        <style>{get_base_style()}</style>
-        <script>
-            window.addEventListener('DOMContentLoaded', function() {{
-                // window.location.search gives you the query part of the current URL
-                // new URLSearchParams(...) creates an easy-to-use object for reading or modifying those query parameters.
-                const urlParams = new URLSearchParams(window.location.search);
-
-                if (urlParams.get('upload') === 'success') {{
-                    const successDiv = document.getElementById('success-message');
-                    if (successDiv) successDiv.style.display = 'block';
-                    const url = new URL(window.location);
-                    url.searchParams.delete('upload'); // Removes the upload query parameter
-                    window.history.replaceState({{}}, '', url); // update the browser's address bar silently
-                }}
-            }});
-        </script>
-    </head>
-    <body>
-        <div class="container">
-            {get_nav_html()}
-            
-            <h1>Manage Information</h1>
-            
-            <div id="success-message" style="display: none; background: #e8f5e8; border-left: 4px solid var(--green); padding: 15px; margin-bottom: 20px; border-radius: 4px;">
-                <strong>Success!</strong> Handbook PDF has been updated successfully.
-            </div>
-            
-            <div class="card">
-                <h2>Quick Actions</h2>
-                <a href="/admin/custom-info/add" class="btn">Add New Information</a>
-                <a href="/admin/upload-handbook" class="btn btn-warning">Update Handbook PDF</a>
-                <a href="/admin/export-data" class="btn btn-secondary">Export System Data</a>
-                <p style="color: var(--muted); margin-top: 10px;">Add new information, update the handbook PDF, or export all system data as backup.</p>
-            </div>
-            
-            <div class="card">
-                <h2>Existing Information ({len(sorted_info)} items)</h2>
-                <div class="table-container">
-                    <table>
-                        <tr>
-                            <th>Topic</th>
-                            <th>Information</th>
-                            <th>Added</th>
-                            <th>Actions</th>
-                        </tr>
-                        {info_html if info_html else '<tr><td colspan="4" style="text-align: center; color: var(--muted);">No custom information added yet</td></tr>'}
-                    </table>
-                </div>
-                
-                {f'''
-                <div style="margin-top: 20px; padding: 15px; background: var(--light-gray); border-radius: 4px;">
-                    <p style="margin: 0; color: var(--muted);">
-                        <strong>Tip:</strong> Information is displayed newest first. Click "Delete" to remove outdated information.
-                    </p>
-                </div>
-                ''' if info_html else ''}
-            </div>
-        </div>
-    </body>
-    </html>
-    """
-    """Feedback management HTML with enhanced statistics"""
-    
-    feedback_rows = ""
-    for feedback in feedback_list:
-        timestamp = feedback.get('timestamp', '')[:19].replace('T', ' ')
-        feedback_text = feedback.get('feedback_text', '')
-        rating = feedback.get('rating', 1)  # Default to 1 since that's the minimum rating
-        user_type = feedback.get('user_type', 'student')
-        
-        # Truncate long feedback for display
-        display_text = feedback_text[:100] + ('...' if len(feedback_text) > 100 else '')
-        
-        # Star rating display
-        stars = '⭐' * int(rating) + '☆' * (5 - int(rating))
-        
-        feedback_rows += f"""
-            <tr>
-                <td>{timestamp}</td>
-                <td title="{feedback_text}">{display_text}</td>
-                <td style="text-align: center;">{stars}<br><small>({rating}/5)</small></td>
-                <td style="text-align: center; text-transform: capitalize;">{user_type}</td>
-            </tr>"""
-    
-    # Calculate user type distribution (Counter already imported at top of admin.py)
-    user_type_counter = {}
-    for feedback in feedback_list:
-        user_type = feedback.get('user_type', 'student').lower()
-        user_type_counter[user_type] = user_type_counter.get(user_type, 0) + 1
-    
-    # Rating distribution bars
-    rating_bars = ""
-    for rating in range(5, 0, -1):
-        count = rating_distribution.get(rating, 0)
-        percentage = (count / total_feedback * 100) if total_feedback > 0 else 0
-        rating_bars += f"""
-            <div style="display: flex; align-items: center; margin: 5px 0;">
-                <span style="width: 60px;">{rating} ⭐</span>
-                <div style="flex: 1; background: #e0e0e0; border-radius: 10px; margin: 0 10px; height: 20px;">
-                    <div style="background: #4caf50; height: 20px; border-radius: 10px; width: {percentage}%;"></div>
-                </div>
-                <span style="width: 80px; text-align: right;">{count} ({percentage:.1f}%)</span>
-            </div>"""
-    
-    return f"""
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>User Feedback</title>
-        <style>{get_base_style()}</style>
-    </head>
-    <body>
-        <div class="container">
-            {get_nav_html()}
-            
-            <h1>User Feedback</h1>
-            
-            <div class="card">
-                <h2>Overall Statistics</h2>
-                <div class="stats">
-                    <div class="stat">
-                        <h3>{total_feedback}</h3>
-                        <p>Total Feedback</p>
-                    </div>
-                    <div class="stat">
-                        <h3>{avg_rating:.1f}</h3>
-                        <p>Average Rating</p>
-                    </div>
-                    <div class="stat">
-                        <h3>{rating_distribution.get(5, 0)}</h3>
-                        <p>5-Star Reviews</p>
-                    </div>
-                    <div class="stat">
-                        <h3>{rating_distribution.get(4, 0)}</h3>
-                        <p>4-Star Reviews</p>
-                    </div>
-                    <div class="stat">
-                        <h3>{rating_distribution.get(3, 0)}</h3>
-                        <p>3-Star Reviews</p>
-                    </div>
-                    <div class="stat">
-                        <h3>{rating_distribution.get(2, 0)}</h3>
-                        <p>2-Star Reviews</p>
-                    </div>
-                    <div class="stat">
-                        <h3>{rating_distribution.get(1, 0)}</h3>
-                        <p>1-Star Reviews</p>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="card">
-                <h2>Feedback by User Type</h2>
-                <div class="stats">
-                    <div class="stat">
-                        <h3>{user_type_counter.get('student', 0)}</h3>
-                        <p>Students</p>
-                    </div>
-                    <div class="stat">
-                        <h3>{user_type_counter.get('faculty', 0)}</h3>
-                        <p>Faculty</p>
-                    </div>
-                    <div class="stat">
-                        <h3>{user_type_counter.get('staff', 0)}</h3>
-                        <p>Staff</p>
-                    </div>
-                    <div class="stat">
-                        <h3>{user_type_counter.get('visitor', 0)}</h3>
-                        <p>Visitors</p>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="card">
-                <h2>Rating Distribution</h2>
-                {rating_bars if rating_bars else '<p style="text-align: center; color: var(--muted);">No ratings yet</p>'}
-            </div>
-            
-            <div class="card">
-                <h2>All Feedback</h2>
-                <div class="table-container">
-                    <table>
-                        <tr>
-                            <th>Date</th>
-                            <th>Feedback</th>
-                            <th>Rating</th>
-                            <th>User Type</th>
-                        </tr>
-                        {feedback_rows if feedback_rows else '<tr><td colspan="4" style="text-align: center; color: var(--muted);">No feedback submitted yet</td></tr>'}
                     </table>
                 </div>
             </div>
@@ -1434,143 +1219,6 @@ def get_custom_info_html(custom_info):
                     </p>
                 </div>
                 ''' if info_html else ''}
-            </div>
-        </div>
-    </body>
-    </html>
-    """
-    """Feedback management HTML with enhanced statistics"""
-    
-    feedback_rows = ""
-    for feedback in feedback_list:
-        timestamp = feedback.get('timestamp', '')[:19].replace('T', ' ')
-        feedback_text = feedback.get('feedback_text', '')
-        rating = feedback.get('rating', 1)  # Default to 1 since that's the minimum rating
-        user_type = feedback.get('user_type', 'student')
-        
-        # Truncate long feedback for display
-        display_text = feedback_text[:100] + ('...' if len(feedback_text) > 100 else '')
-        
-        # Star rating display
-        stars = '⭐' * int(rating) + '☆' * (5 - int(rating))
-        
-        feedback_rows += f"""
-            <tr>
-                <td>{timestamp}</td>
-                <td title="{feedback_text}">{display_text}</td>
-                <td style="text-align: center;">{stars}<br><small>({rating}/5)</small></td>
-                <td style="text-align: center; text-transform: capitalize;">{user_type}</td>
-            </tr>"""
-    
-    # Calculate user type distribution (Counter already imported at top of admin.py)
-    user_type_counter = {}
-    for feedback in feedback_list:
-        user_type = feedback.get('user_type', 'student').lower()
-        user_type_counter[user_type] = user_type_counter.get(user_type, 0) + 1
-    
-    # Rating distribution bars
-    rating_bars = ""
-    for rating in range(5, 0, -1):
-        count = rating_distribution.get(rating, 0)
-        percentage = (count / total_feedback * 100) if total_feedback > 0 else 0
-        rating_bars += f"""
-            <div style="display: flex; align-items: center; margin: 5px 0;">
-                <span style="width: 60px;">{rating} ⭐</span>
-                <div style="flex: 1; background: #e0e0e0; border-radius: 10px; margin: 0 10px; height: 20px;">
-                    <div style="background: #4caf50; height: 20px; border-radius: 10px; width: {percentage}%;"></div>
-                </div>
-                <span style="width: 80px; text-align: right;">{count} ({percentage:.1f}%)</span>
-            </div>"""
-    
-    return f"""
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>User Feedback</title>
-        <style>{get_base_style()}</style>
-    </head>
-    <body>
-        <div class="container">
-            {get_nav_html()}
-            
-            <h1>User Feedback</h1>
-            
-            <div class="card">
-                <h2>Overall Statistics</h2>
-                <div class="stats">
-                    <div class="stat">
-                        <h3>{total_feedback}</h3>
-                        <p>Total Feedback</p>
-                    </div>
-                    <div class="stat">
-                        <h3>{avg_rating:.1f}</h3>
-                        <p>Average Rating</p>
-                    </div>
-                    <div class="stat">
-                        <h3>{rating_distribution.get(5, 0)}</h3>
-                        <p>5-Star Reviews</p>
-                    </div>
-                    <div class="stat">
-                        <h3>{rating_distribution.get(4, 0)}</h3>
-                        <p>4-Star Reviews</p>
-                    </div>
-                    <div class="stat">
-                        <h3>{rating_distribution.get(3, 0)}</h3>
-                        <p>3-Star Reviews</p>
-                    </div>
-                    <div class="stat">
-                        <h3>{rating_distribution.get(2, 0)}</h3>
-                        <p>2-Star Reviews</p>
-                    </div>
-                    <div class="stat">
-                        <h3>{rating_distribution.get(1, 0)}</h3>
-                        <p>1-Star Reviews</p>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="card">
-                <h2>Feedback by User Type</h2>
-                <div class="stats">
-                    <div class="stat">
-                        <h3>{user_type_counter.get('student', 0)}</h3>
-                        <p>Students</p>
-                    </div>
-                    <div class="stat">
-                        <h3>{user_type_counter.get('faculty', 0)}</h3>
-                        <p>Faculty</p>
-                    </div>
-                    <div class="stat">
-                        <h3>{user_type_counter.get('staff', 0)}</h3>
-                        <p>Staff</p>
-                    </div>
-                    <div class="stat">
-                        <h3>{user_type_counter.get('visitor', 0)}</h3>
-                        <p>Visitors</p>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="card">
-                <h2>Rating Distribution</h2>
-                {rating_bars if rating_bars else '<p style="text-align: center; color: var(--muted);">No ratings yet</p>'}
-            </div>
-            
-            <div class="card">
-                <h2>All Feedback</h2>
-                <div class="table-container">
-                    <table>
-                        <tr>
-                            <th>Date</th>
-                            <th>Feedback</th>
-                            <th>Rating</th>
-                            <th>User Type</th>
-                        </tr>
-                        {feedback_rows if feedback_rows else '<tr><td colspan="4" style="text-align: center; color: var(--muted);">No feedback submitted yet</td></tr>'}
-                    </table>
-                </div>
             </div>
         </div>
     </body>
