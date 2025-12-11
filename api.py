@@ -62,6 +62,7 @@ test_langsmith_connection()  # runs the test when app starts
 
 last_run_ids = {}  # keeps a list of user sessions
 
+# a Pydantic model used to define and validate the structure of feedback data
 class FeedbackSubmission(BaseModel):
     feedback_text: str  # user’s written feedback
     rating: int         # number rating from user
@@ -153,6 +154,9 @@ def sanitize_text(text: str) -> str:
     text = re.sub(r'\n{3,}', '\n\n', text)  # Max 2 consecutive newlines
     
     # Ensure safe encoding
+    # encode – converts the string into UTF-8 bytes
+    # ignore – skips any characters that cannot be encoded instead of raising an error
+    # decode – converts the cleaned UTF-8 bytes back into a normal Python string
     try:
         text = text.encode("utf-8", "ignore").decode("utf-8")
     except:
@@ -210,6 +214,8 @@ class ChatbotMemory:
     def load_custom_info(self) -> Dict:
         try:
             # If custom info file exists, load it as JSON
+            # with - safely manages the file so it automatically closes after use
+            # utf-8 – specifies the character encoding to correctly read Unicode text
             if os.path.exists(CUSTOM_INFO_FILE):
                 with open(CUSTOM_INFO_FILE, 'r', encoding='utf-8') as f:
                     return json.load(f)
@@ -269,7 +275,9 @@ class ChatbotMemory:
             clean_session_id = sanitize_text(session_id)  # Clean session ID text
             
             # If the session already exists, it just reuses it
+            # ? - a placeholder that safely inserts the value (clean_session_id) into the SQL query to prevent SQL injection
             cursor.execute('SELECT session_id FROM sessions WHERE session_id = ?', (clean_session_id,))
+            # fetchone – retrieves the first result from the previous SQL query or returns None if no record exists
             if not cursor.fetchone():  # If it’s a new user or session, the chatbot creates a fresh record. 
                 cursor.execute('''
                     INSERT INTO sessions (session_id, created_at, last_active, total_messages)
@@ -298,7 +306,6 @@ class ChatbotMemory:
             clean_context_used = sanitize_text(context_used)
             
             # Adds a new record to the conversations table
-            # The ? symbols are placeholders for actual values that will be inserted later.
             cursor.execute('''
                 INSERT INTO conversations (session_id, timestamp, user_message, bot_response, context_used)
                 VALUES (?, ?, ?, ?, ?)
@@ -346,6 +353,7 @@ class ChatbotMemory:
             ''', (clean_session_id, limit))
         
             conversations = []
+            # fetchall – retrieves all rows returned by the SQL query as a list of tuples
             for row in cursor.fetchall():
                 try:
                     # Try to sanitize each field individually
@@ -357,7 +365,7 @@ class ChatbotMemory:
                         conversations.append({
                             'user_message': user_msg,
                             'bot_response': bot_msg,
-                            'timestamp': row[2]
+                            'timestamp': row[2] # third column from the SQL result (conversation’s timestamp)
                         })
                 except Exception as row_error:
                     # Skip corrupted rows
@@ -373,7 +381,7 @@ class ChatbotMemory:
             return []
 
 
-    # checks if the user’s question relates to any of the custom information stored by an admin.
+    # checks if the user’s question relates to any of the custom information stored by an admin
     def get_relevant_custom_info(self, query: str) -> str:
         """
         Get relevant custom info with fuzzy matching support
@@ -390,7 +398,7 @@ class ChatbotMemory:
                 clean_topic = sanitize_text(info['topic'].lower())
                 match_score = 0
             
-                # Method 1: Direct substring match (highest priority)
+                # Method 1: Exact phrase match (top priority)
                 if clean_topic in clean_query or clean_topic in normalized_query:
                     match_score = 100
             
@@ -410,10 +418,12 @@ class ChatbotMemory:
                         topic_words = [w for w in clean_topic.split() if len(w) > 3]
                         query_words = [w for w in normalized_query.split() if len(w) > 3]
                     
-                        for topic_word in topic_words:
-                            for query_word in query_words:
+                        for topic_word in topic_words: # Iterates through each significant word from the stored topic
+                            for query_word in query_words: # Compares each topic word against each significant word from the user’s query
+                                # Calculates how similar the two words are using fuzzy string matching (0–100)
                                 word_similarity = fuzz.ratio(topic_word, query_word)
                                 if word_similarity >= 80:  # High threshold for word matching
+                                    # Updates the match score using the highest similarity value found
                                     match_score = max(match_score, word_similarity)
             
                 # If we have a good match, add it to results
@@ -425,6 +435,7 @@ class ChatbotMemory:
                     })
         
             # Sort by match score (highest first)
+            # lambda - a small, unnamed function used for quick, inline operations
             relevant.sort(key=lambda x: x['score'], reverse=True)
         
             # Return top 3 matches
@@ -526,14 +537,15 @@ def fuzzy_query_expansion(query):
     
     # Also check word-by-word for partial matches
     query_words = query_lower.split()
-    for word in query_words:
+    for word in query_words: # Iterates through each word from the user’s query
+        # Loops through each known GSU term and its list of possible spellings/typos
         for standard_term, variations in fuzzy_terms.items():
             for variation in variations:
                 # Check similarity of individual words
                 if len(word) > 3 and fuzz.ratio(word, variation) >= 85:
-                    if standard_term not in expanded_terms:
+                    if standard_term not in expanded_terms: # Avoid adding duplicates to the expanded list
                         expanded_terms.append(standard_term)
-                    break
+                    break # Stops checking more variations once a match is found for this term
     
     # Return expanded query with matched terms
     if expanded_terms:
@@ -576,13 +588,12 @@ def normalize_query_text(query):
         # Remove punctuation for matching
         word_clean = word.strip('.,!?;:')
         
-        # Check if word needs correction
-        if word_clean in corrections:
-            corrected_words.append(corrections[word_clean])
-        else:
+        if word_clean in corrections: # Checks whether the cleaned word is a known typo that needs to be corrected
+            corrected_words.append(corrections[word_clean]) # If it is a known typo, add its corrected version to the list
+        else: # If the word is not a known typo, keep it as-is
             corrected_words.append(word)
     
-    return ' '.join(corrected_words)
+    return ' '.join(corrected_words) # Reconstructs the corrected sentence by joining all corrected words with spaces
 
 
 def smart_query_preprocessing(query):
@@ -621,42 +632,52 @@ async def smart_retrieval(query, retriever, handbook_text):
             
             # Also try with original query in case preprocessing was too aggressive
             if processed_query != query:
+                # asyncio.get_event_loop() – gets the current event loop used for running async tasks
+                # run_in_executor() – runs a blocking task (retriever.invoke) on a separate thread so it does not block the main event loop
+                # executor – the thread pool that will run the retrieval operation
+                # retriever.invoke – the function that searches the vector database for relevant handbook chunks
                 docs_original = await asyncio.get_event_loop().run_in_executor(
                     executor, retriever.invoke, query
                 )
+                # all_chunks.add() – inserts a new tuple into the all_chunks set and create a tuple of two items
+                # doc.page_content – the actual text content of the retrieved document chunk
+                # doc.metadata.get('chunk_id', 0) – retrieves the chunk ID from metadata; defaults to 0 if missing
                 for doc in docs_original:
                     all_chunks.add((doc.page_content, doc.metadata.get('chunk_id', 0)))
                     
         except Exception as e:
             print(f"Retrieval error: {e}")
     
-    # Keyword-based fallback (use processed query)
+    # Only use fallback retrieval if fewer than 8 chunks were found AND the handbook text is available
     if len(all_chunks) < 8 and handbook_text:
         keywords = extract_keywords(processed_query)
+        # Split the handbook text into sentences, remove extra spaces, and keep only meaningful sentences (length > 20 characters)
         sentences = [s.strip() for s in handbook_text.split('.') if len(s.strip()) > 20]
         
-        scored_sentences = []
+        scored_sentences = [] # Prepare an empty list to store sentences along with their calculated relevance score
         for sentence in sentences:
             sentence_lower = sentence.lower()
             score = 0
             
-            # Check both processed and original query
+            # If the sentence directly contains the full query (processed or original), give it a high score
             if processed_query.lower() in sentence_lower or query.lower() in sentence_lower:
                 score += 25
             
             for keyword in keywords:
-                if keyword in sentence_lower:
+                if keyword in sentence_lower: # If a keyword appears in the sentence
+                    # Increase the score based on keyword length (longer keywords are usually more important)
                     score += len(keyword) + 2
             
-            if score > 5:
+            if score > 5: # Only consider sentences with enough relevance
                 scored_sentences.append((sentence, score))
         
-        scored_sentences.sort(key=lambda x: x[1], reverse=True)
-        for sentence, _ in scored_sentences[:15]:
-            all_chunks.add((sentence, 999))
+        scored_sentences.sort(key=lambda x: x[1], reverse=True) # Sort sentences by score (highest first)
+        for sentence, _ in scored_sentences[:15]: # Take the top 15 most relevant fallback sentences
+            all_chunks.add((sentence, 999)) # Add them to the chunk set with a fake chunk ID of 999 (indicating fallback source)
     
     result_docs = []
     for content, chunk_id in all_chunks:
+        # Create a LangChain Document containing text and metadata
         doc = Document(page_content=content, metadata={"chunk_id": chunk_id})
         result_docs.append(doc)
     
@@ -664,23 +685,22 @@ async def smart_retrieval(query, retriever, handbook_text):
 
 
 # Build context including memory and custom info (minimal conversation history)
-# contex = the information the chatbot gives the AI model before it generates an answer
+# contex - the information the chatbot gives the AI model before it generates an answer
 def build_context_with_memory(docs, query, session_id, max_length=8000):  # Builds the full context (conversation + custom info + handbook)
     context_parts = []  # Holds all context sections to send to the chatbot
     
-    # === 1. Add recent conversation history (ALWAYS include for follow-ups) ===
+    # 1. Add recent conversation history (ALWAYS include for follow-ups)
     recent_conversations = memory.get_recent_conversations(session_id, limit=3)  # Get the last 3 conversations from memory
     if recent_conversations:  # Continue only if there’s any conversation history
-        query_lower = query.lower()  # Convert query to lowercase for easy matching
+        query_lower = query.lower()
         
-        # Detect if this is a follow-up question (contains pronouns or short reference words)
-        follow_up_indicators = [  # Common words that indicate a follow-up or reference question
+        follow_up_indicators = [
             'what', 'when', 'where', 'who', 'which', 'how',
             'that', 'this', 'those', 'these', 'it', 'they',
             'year', 'date', 'time', 'place', 'person', 'name'
         ]
         
-        is_followup = (  # Check if the user’s question seems like a follow-up
+        is_followup = (
             len(query.split()) <= 5 or  # Very short question → likely follow-up
             any(indicator in query_lower for indicator in follow_up_indicators)  # Contains a reference word
         )
@@ -688,14 +708,14 @@ def build_context_with_memory(docs, query, session_id, max_length=8000):  # Buil
         if is_followup and recent_conversations:  # If it's a follow-up, use recent chat context
             history = "PREVIOUS CONVERSATION (Use this to understand context for short/follow-up questions):\n"  # Header label
             for i, conv in enumerate(recent_conversations[-2:], 1):  # Include last 2 conversations
-                clean_user_msg = sanitize_text(conv['user_message'])  # Clean user message
-                clean_bot_msg = sanitize_text(conv['bot_response'])  # Clean chatbot reply
+                clean_user_msg = sanitize_text(conv['user_message'])
+                clean_bot_msg = sanitize_text(conv['bot_response']) 
                 history += f"\nQ{i}: {clean_user_msg}\n"  # Add cleaned user message
                 history += f"A{i}: {clean_bot_msg}\n"  # Add cleaned chatbot reply
             context_parts.append(history)  # Add the history section to the context list
         
         elif recent_conversations:  # If not a follow-up, include only relevant past messages
-            query_lower = query.lower()  # Convert query to lowercase again
+            query_lower = query.lower()
             relevant_history = []  # Stores matching previous conversations
             
             for conv in recent_conversations:  # Go through each past message
@@ -706,26 +726,26 @@ def build_context_with_memory(docs, query, session_id, max_length=8000):  # Buil
             if relevant_history:  # If any relevant conversation was found
                 history = "RELEVANT PREVIOUS CONTEXT:\n"  # Header label for relevant history
                 for conv in relevant_history[-1:]:  # Include only the most recent relevant exchange
-                    clean_user_msg = sanitize_text(conv['user_message'])  # Clean user text
-                    clean_bot_msg = sanitize_text(conv['bot_response'])  # Clean bot reply
+                    clean_user_msg = sanitize_text(conv['user_message'])
+                    clean_bot_msg = sanitize_text(conv['bot_response']) 
                     history += f"Previous Q: {clean_user_msg}\n"  # Add previous question
                     history += f"Previous A: {clean_bot_msg}\n"  # Add previous answer
                 context_parts.append(history)  # Add relevant conversation section
     
-    # === 2. Add custom user information ===
-    custom_info = memory.get_relevant_custom_info(query)  # Look for extra info added by admins related to query
+    # 2. Add custom user information
+    custom_info = memory.get_relevant_custom_info(query)
     if custom_info:  # If such info exists
-        clean_custom_info = sanitize_text(custom_info)  # Clean the info text
+        clean_custom_info = sanitize_text(custom_info) 
         context_parts.append(f"ADDITIONAL INFORMATION:\n{clean_custom_info}\n")  # Add labeled custom info section
     
-    # === 3. Add handbook context from retrieved documents ===
+    # 3. Add handbook context from retrieved documents
     if docs:  # If retrieved handbook sections exist
         keywords = extract_keywords(query)  # Extract key terms from the query
         scored_docs = []  # List to store (document, score) pairs
         
         for doc in docs:  # Go through each retrieved handbook chunk
             clean_content = sanitize_text(doc.page_content)  # Clean the chunk text
-            content_lower = clean_content.lower()  # Convert to lowercase for comparison
+            content_lower = clean_content.lower()
             score = 0  # Initialize document relevance score
             
             if query.lower() in content_lower:  # If full query appears in this text
@@ -773,8 +793,8 @@ def build_context_with_memory(docs, query, session_id, max_length=8000):  # Buil
 def log_query(query_text: str, answer_text: str, answered_flag: bool, chunks_found: int):
     """Saves every question and answer into a file and database"""
 
-    clean_query = sanitize_text(query_text)  # cleans the question
-    clean_answer = sanitize_text(answer_text)  # cleans the answer
+    clean_query = sanitize_text(query_text) 
+    clean_answer = sanitize_text(answer_text) 
     
     try:
         os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)  # makes sure the folder exists
@@ -811,7 +831,7 @@ def log_query(query_text: str, answer_text: str, answered_flag: bool, chunks_fou
                 id INTEGER PRIMARY KEY AUTOINCREMENT,  -- unique number for each record
                 timestamp TEXT,                        -- when the question was asked
                 query_text TEXT,                       -- question text
-                answer_text TEXT,                      -- chatbot’s answer
+                answer_text TEXT,                      -- chatbot answer
                 answered INTEGER,                      -- 1 if answered, 0 if not
                 chunks_found INTEGER                   -- how many chunks were used
             )
@@ -822,11 +842,11 @@ def log_query(query_text: str, answer_text: str, answered_flag: bool, chunks_fou
         cur.execute(
             "INSERT INTO queries (timestamp, query_text, answer_text, answered, chunks_found) VALUES (?, ?, ?, ?, ?)",
             (
-                datetime.now().isoformat(),  # date and time
-                clean_query,                 # cleaned question
-                clean_answer,                # cleaned answer
-                int(answered_flag),          # turns True/False into 1/0
-                chunks_found                 # number of text chunks found
+                datetime.now().isoformat(), 
+                clean_query,                
+                clean_answer,                
+                int(answered_flag), # turns True/False into 1/0
+                chunks_found                 
             )
         )
 
@@ -885,8 +905,8 @@ def load_embeddings_and_db():
             # Process in smaller batches to avoid memory spikes
             batch_size = 50
             db = None
-            for i in range(0, len(chunks), batch_size):
-                batch = chunks[i:i+batch_size]
+            for i in range(0, len(chunks), batch_size): # Loops through all chunks in steps of 50
+                batch = chunks[i:i+batch_size] # Slices the full list of chunks to get the current batch of up to 50 chunks
                 if db is None:
                     db = Chroma.from_texts(
                         texts=batch,
@@ -1131,29 +1151,29 @@ def traced_context(docs, query, session_id):
     return build_context_with_memory(text_chunks, query, session_id)
 
 
-@app.post("/chat")  # This sets up the main chat route where students send their questions
-async def chat(request: Request):  # This function handles what happens when a question is asked
+@app.post("/chat")
+async def chat(request: Request):
     """Main chat endpoint that handles student questions"""
     global retriever, HANDBOOK_TEXT, model  # Use these shared variables that hold important data and tools
     start_time = time.time()  # Record the start time to measure how long it takes
     
-    try:  # Try to process the chat safely
+    try:  
         if not model:  # If the model is missing or not set up
-            return {"answer": "Gemini API is not configured."}  # Tell the user the model isn’t ready
+            return {"answer": "Gemini API is not configured."} 
         
         data = await request.json()  # Read the message the student sent
         query = data.get("query", "").strip()  # Get the actual question text
         session_id = data.get("session_id", "default_session")  # Get the student’s chat session
         
         if not query:  # If the question is empty
-            return {"answer": "Please ask a question."}  # Ask the user to type something
+            return {"answer": "Please ask a question."}
         
         memory.get_or_create_session(session_id)  # Make sure the chat session exists in memory
         print(f"🔍 Processing query: {query} [Session: {session_id}]")  # Show what’s being processed
         
         # Timeout protection
         if time.time() - start_time > 18:  # If it’s taking too long
-            return {"answer": "Please check your internet connection and try again."}  # Show timeout message
+            return {"answer": "Please check your internet connection and try again."}
         
         # Step 1: Find related handbook sections
         docs = await traced_retrieval(query, retriever, HANDBOOK_TEXT)  # Look for matching sections in the handbook
@@ -1173,10 +1193,10 @@ async def chat(request: Request):  # This function handles what happens when a q
         # Step 2: Build the context for the model
         context = traced_context(docs, query, session_id)  # Combine the found sections with the question
         clean_context = sanitize_text(context)  # Clean it up (remove unnecessary symbols, etc.)
-        clean_query = sanitize_text(query)  # Clean the question too
+        clean_query = sanitize_text(query)
         
         # Step 3: Create the model's prompt
-        prompt_parts = [  # This list builds the full instruction for the AI
+        prompt_parts = [
             "You are a GSU student handbook assistant. Provide a focused, direct answer to the student's question.",
             "",
             "IMPORTANT INSTRUCTIONS:",
@@ -1242,7 +1262,7 @@ async def chat(request: Request):  # This function handles what happens when a q
     except Exception as e:  # If something unexpected happens
         print(f"❌ Unexpected error: {repr(e)}")  # Show what went wrong
         error_msg = "Please check your internet connection and try again." if time.time() - start_time > 20 \
-            else "I encountered an unexpected error. Please try again or contact support."  # Choose error message
+            else "I encountered an unexpected error. Please try again or contact support." 
         
         try:  # Try to still record the error
             session_id = data.get("session_id", "default_session")
@@ -1261,7 +1281,7 @@ async def chat(request: Request):  # This function handles what happens when a q
 async def submit_feedback(feedback: FeedbackSubmission):
     """Handles feedback from users"""
     try:
-        # make sure the â€œdataâ€ folder exists
+        # make sure the data folder exists
         os.makedirs("data", exist_ok=True)
         
         # check if feedback.csv already exists
@@ -1278,11 +1298,11 @@ async def submit_feedback(feedback: FeedbackSubmission):
 
             # add new feedback entry
             writer.writerow({
-                "timestamp": datetime.now().isoformat(),             # current date and time
-                "feedback_text": sanitize_text(feedback.feedback_text), # cleaned feedback text
-                "rating": feedback.rating,                           # userâ€™s rating (1â€“5)
-                "user_type": feedback.user_type,                     # who gave it (student, admin, etc.)
-                "session_id": feedback.session_id                    # which chat session it came from
+                "timestamp": datetime.now().isoformat(),             
+                "feedback_text": sanitize_text(feedback.feedback_text), 
+                "rating": feedback.rating,                           
+                "user_type": feedback.user_type,                    
+                "session_id": feedback.session_id                    
             })
         
         # also try sending feedback to LangSmith (for monitoring)
@@ -1290,7 +1310,7 @@ async def submit_feedback(feedback: FeedbackSubmission):
             feedback_data = {
                 "feedback_text": sanitize_text(feedback.feedback_text), # cleaned text again
                 "rating": feedback.rating,
-                "normalized_score": feedback.rating / 5.0,              # turns score into 0â€“1 scale
+                "normalized_score": feedback.rating / 5.0,              #  # turns score into 0–1 scale
                 "user_type": feedback.user_type,
                 "session_id": feedback.session_id,
                 "timestamp": datetime.now().isoformat()
@@ -1303,13 +1323,13 @@ async def submit_feedback(feedback: FeedbackSubmission):
                 return {"status": "feedback_logged", "data": data}
             
             log_feedback_event(feedback_data)  # send feedback data to LangSmith
-            print(f"âœ… Feedback logged to LangSmith: {feedback.rating}/5 stars")
+            print(f"Feedback logged to LangSmith: {feedback.rating}/5 stars")
             
         except Exception as ls_err:
-            # if feedback canâ€™t be sent online, just show a warning
-            print(f"âš ï¸ Could not send feedback to LangSmith: {ls_err}")
+            # if feedback cant be sent online, just show a warning
+            print(f"Could not send feedback to LangSmith: {ls_err}")
         
-        print(f"âœ… Feedback saved locally: {feedback.rating}/5 stars")
+        print(f"Feedback saved locally: {feedback.rating}/5 stars")
         return {"message": "Feedback submitted successfully", "status": "success"}
     
     except Exception as e:
