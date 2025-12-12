@@ -310,20 +310,24 @@ GET /report
 ```
 
 ### Admin Endpoints
-All admin endpoints require HTTP Basic Auth:
-```
-GET  /admin                          # Dashboard
-GET  /admin/custom-info              # Manage information
-POST /admin/custom-info/add          # Add new info
-GET  /admin/custom-info/delete/{id}  # Delete info
-POST /admin/upload-handbook          # Upload PDF
-GET  /admin/faq                      # FAQ analysis
-GET  /admin/manage-queries           # Manage queries
-POST /admin/mark-resolved            # Mark query resolved
-POST /admin/bulk-mark-resolved       # Bulk mark resolved
-GET  /admin/feedback                 # View feedback
-GET  /admin/export-data              # Export system data
-```
+All admin endpoints require **HTTP Basic Authentication**.
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/admin` | Show the admin dashboard with statistics including total queries, answered/unanswered counts, accuracy rate, conversations, sessions, and custom info. |
+| GET | `/admin/export-query-log` | Export the query log as a CSV file with timestamped filename. |
+| GET | `/admin/custom-info` | View all custom information stored in memory/database. |
+| GET | `/admin/custom-info/add` | Display a form to add new custom information. Supports optional `prefill_topic` query parameter. |
+| POST | `/admin/custom-info/add` | Submit new custom information to memory. Redirects back to `/admin/custom-info`. |
+| GET | `/admin/custom-info/delete/{info_id}` | Delete a custom info entry by ID. Redirects back to `/admin/custom-info`. |
+| GET | `/admin/export-custom-info` | Export all custom information as a JSON file with timestamped filename. |
+| GET | `/admin/upload-handbook` | Display upload page for the handbook PDF with current file info. |
+| POST | `/admin/upload-handbook` | Upload a new handbook PDF. Replaces the old file and keeps a backup temporarily. |
+| GET | `/admin/faq` | View frequently asked questions and unresolved queries, grouped with statistics on success rates. |
+| GET | `/admin/manage-queries` | View all unanswered or unresolved user queries, sorted by frequency. |
+| POST | `/admin/mark-resolved` | Mark a single question as resolved in the query log. Redirects to `/admin/manage-queries`. |
+| POST | `/admin/bulk-mark-resolved` | Mark multiple selected queries as resolved at once. Redirects to `/admin/manage-queries`. |
+| GET | `/admin/feedback` | View user feedback entries, with total count, average rating, and rating distribution. |
+| GET | `/admin/export-feedback` | Export user feedback as a CSV file with timestamped filename. |
 
 ## Troubleshooting
 
