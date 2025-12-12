@@ -7,6 +7,8 @@ import secrets  # keeps passwords and keys safe
 import os  # works with folders and files
 import csv  # reads and saves feedback data
 import sqlite3  # connects to the local database
+from fastapi.responses import FileResponse
+import tempfile
 import shutil  # copies or replaces files
 from datetime import datetime  # records the date and time of actions
 from collections import Counter  # counts how many times something appears
@@ -22,6 +24,9 @@ load_dotenv()
 security = HTTPBasic()  # sets up basic login checking
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")  # gets the admin name or uses "admin" if none is set
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "gsu2025")  # gets the admin password or uses "gsu2025" if none is set
+
+FEEDBACK_FILE = "data/feedback.csv"
+CUSTOM_INFO_FILE = "data/custom_info.json"
 
 
 # Function to check if the admin login details are correct
@@ -251,6 +256,28 @@ def setup_admin_routes(app, memory, LOG_FILE, MEMORY_DB):
             total_queries, answered_count, not_answered_count, accuracy_rate,
             total_conversations, total_sessions, total_custom_info, recent_queries
         ))
+    
+
+    @app.get("/admin/export-query-log")
+    async def admin_export_query_log(credentials: HTTPBasicCredentials = Depends(verify_admin)):
+        """Export query log CSV file"""
+        try:
+            if not os.path.exists(LOG_FILE):
+                raise HTTPException(status_code=404, detail="Query log file not found")
+        
+            # Create filename with timestamp
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = f"gsu_query_log_{timestamp}.csv"
+        
+            # Return the file for download
+            return FileResponse(
+                path=LOG_FILE,
+                media_type='text/csv',
+                filename=filename
+            )
+        except Exception as e:
+            print(f"Error exporting query log: {e}")
+            raise HTTPException(status_code=500, detail=f"Error exporting query log: {str(e)}")
 
 
     @app.get("/admin/custom-info", response_class=HTMLResponse)  # When admin visits this page, show all custom info
@@ -291,6 +318,28 @@ def setup_admin_routes(app, memory, LOG_FILE, MEMORY_DB):
             del memory.custom_info[info_id]
             memory.save_custom_info()
         return RedirectResponse(url="/admin/custom-info", status_code=303)
+    
+
+    @app.get("/admin/export-custom-info")
+    async def admin_export_custom_info(credentials: HTTPBasicCredentials = Depends(verify_admin)):
+        """Export custom information JSON file"""
+        try:
+            if not os.path.exists(CUSTOM_INFO_FILE):
+                raise HTTPException(status_code=404, detail="Custom info file not found")
+        
+            # Create filename with timestamp
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = f"gsu_custom_info_{timestamp}.json"
+        
+            # Return the file for download
+            return FileResponse(
+                path=CUSTOM_INFO_FILE,
+                media_type='application/json',
+                filename=filename
+            )
+        except Exception as e:
+            print(f"Error exporting custom info: {e}")
+            raise HTTPException(status_code=500, detail=f"Error exporting custom info: {str(e)}")
     
     
     @app.get("/admin/upload-handbook", response_class=HTMLResponse)  # When admin visits the upload page
@@ -532,6 +581,28 @@ def setup_admin_routes(app, memory, LOG_FILE, MEMORY_DB):
 
         # Show the feedback page with all details (list, total, average, rating counts)
         return HTMLResponse(content=get_feedback_html(feedback_list, total_feedback, avg_rating, rating_distribution))
+    
+
+    @app.get("/admin/export-feedback")
+    async def admin_export_feedback(credentials: HTTPBasicCredentials = Depends(verify_admin)):
+        """Export feedback CSV file"""
+        try:
+            if not os.path.exists(FEEDBACK_FILE):
+                raise HTTPException(status_code=404, detail="Feedback file not found")
+        
+            # Create filename with timestamp
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = f"gsu_feedback_{timestamp}.csv"
+        
+            # Return the file for download
+            return FileResponse(
+                path=FEEDBACK_FILE,
+                media_type='text/csv',
+                filename=filename
+            )
+        except Exception as e:
+            print(f"Error exporting feedback: {e}")
+            raise HTTPException(status_code=404, detail=f"Error exporting feedback: {str(e)}")
 
     
     @app.post("/admin/mark-resolved")  # When the admin marks a question as resolved
@@ -634,23 +705,6 @@ def setup_admin_routes(app, memory, LOG_FILE, MEMORY_DB):
         except Exception as e:
             print(f"❌ Error in bulk resolve: {e}")
             return RedirectResponse(url="/admin/manage-queries", status_code=303)
-
-
-    @app.get("/admin/export-data")  # When the admin visits this page to export data
-    async def admin_export_data(credentials: HTTPBasicCredentials = Depends(verify_admin)):
-        # Only the admin can access this function
-
-        # Prepare the data to be exported
-        export_data = {
-            "custom_info": memory.custom_info,  # Get stored chatbot data
-            "export_timestamp": datetime.now().isoformat()  # Add the time when it was exported
-        }
-
-        # Return the data and a suggested file name for download
-        return {
-            "data": export_data,
-            "filename": f"gsu_chatbot_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-        }
 
 
 # HTML Templates
@@ -1111,6 +1165,15 @@ def get_updated_dashboard_html(
                     </div>
                 </div>
             </div>
+
+            <!-- NEW EXPORT SECTION -->
+            <div class="card">
+                <h2>Export Query Data</h2>
+                <a href="/admin/export-query-log" class="btn btn-success">Export Query Log</a>
+                <p style="color: var(--muted); margin-top: 10px;">
+                    Download all query logs including timestamps, questions, answers, and success rates as CSV.
+                </p>
+            </div>
             
             <div class="card">
                 <h2>Recent Queries</h2>
@@ -1194,8 +1257,10 @@ def get_custom_info_html(custom_info):
                 <h2>Quick Actions</h2>
                 <a href="/admin/custom-info/add" class="btn">Add New Information</a>
                 <a href="/admin/upload-handbook" class="btn btn-warning">Update Handbook PDF</a>
-                <a href="/admin/export-data" class="btn btn-secondary">Export System Data</a>
-                <p style="color: var(--muted); margin-top: 10px;">Add new information, update the handbook PDF, or export all system data as backup.</p>
+                <a href="/admin/export-custom-info" class="btn btn-success">Export Custom Info</a>
+                <p style="color: var(--muted); margin-top: 10px;">
+                    Add new information, update the handbook PDF, or export custom info as JSON backup.
+                </p>
             </div>
             
             <div class="card">
@@ -1878,6 +1943,15 @@ def get_feedback_html(feedback_list, total_feedback, avg_rating, rating_distribu
                         <p>1-Star Reviews</p>
                     </div>
                 </div>
+            </div>
+
+            <!-- NEW EXPORT SECTION -->
+            <div class="card">
+                <h2>Export Feedback Data</h2>
+                <a href="/admin/export-feedback" class="btn btn-success">Export Feedback</a>
+                <p style="color: var(--muted); margin-top: 10px;">
+                    Download all user feedback including ratings, comments, timestamps, and user types as CSV.
+                </p>
             </div>
             
             <div class="card">
