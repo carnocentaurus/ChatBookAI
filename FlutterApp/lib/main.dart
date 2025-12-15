@@ -15,7 +15,7 @@ import 'about.dart';
 void main() { // The entry point of every Flutter app. Execution starts here.
   WidgetsFlutterBinding.ensureInitialized(); // Initializes Flutter engine bindings required for platform channel and native desktop method calls (like setWindowTitle).
 
-  if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) { // Checks if the app is running on a desktop platform (Windows, Linux, or macOS).  
+  if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
     setWindowTitle('ChatBook AI'); // Only visible on desktop title bars.
     setWindowMinSize(const Size(500, 1000)); // Defines the smallest possible window size (width: 500px, height: 1000px).  
     setWindowMaxSize(const Size(500, 1000)); // Defines the largest possible window size (same as min size).
@@ -38,7 +38,7 @@ String getBaseUrl() {
       return "http://127.0.0.1:8000";
     } 
     else if (Platform.isAndroid || Platform.isIOS) {
-      return "http://10.137.133.100:8000";
+      return "http://10.21.215.213:8000";
     }
   }
   throw UnsupportedError("Unsupported platform");
@@ -54,7 +54,8 @@ Future<bool> isServerReady() async {
       final data = jsonDecode(response.body);
       return data['status'] == 'healthy';
     }
-  } catch (e) {
+  } 
+  catch (e) {
     return false;
   }
   return false;
@@ -65,14 +66,14 @@ Future<bool> isServerReady() async {
 String _sessionId = DateTime.now().millisecondsSinceEpoch.toString();
 
 
-// This function sends your question to the chatbot backend, waits for a response, and returns the chatbot’s answer.
-Future<String> queryHandbook(String question) async {  // Defines an asynchronous function that takes the user's question as input
-  final url = Uri.parse("${getBaseUrl()}/chat"); // this is the endpoint where the chatbot API listens. 
+// This function sends your question to the chatbot backend, waits for a response, and returns the chatbot’s answer
+Future<String> queryHandbook(String question) async {
+  final url = Uri.parse("${getBaseUrl()}/chat"); // this is the endpoint where the chatbot API listens
   try {
-    final response = await http.post( // Sends a POST request to the server (a way of sending data).
+    final response = await http.post( // Sends a POST request to the server (a way of sending data)
       url,
-      headers: {"Content-Type": "application/json"}, // Tells the server what type of data you’re sending (in this case, JSON).
-      // The unique session ID ensures the backend maintains session context per user.
+      headers: {"Content-Type": "application/json"}, // Tells the server what type of data you’re sending (in this case, JSON)
+      // The unique session ID ensures the backend maintains session context per user
       body: jsonEncode({"query": question, "session_id": _sessionId}),
     );
     if (response.statusCode == 200) { // Checks if the HTTP status code indicates success (200 OK).
@@ -97,15 +98,16 @@ Future<Map<String, dynamic>> fetchReports() async {
     if (response.statusCode == 200) { // If the server reply is OK
       final data = jsonDecode(response.body) as Map<String, dynamic>; // Turn the reply into a readable format
       return {
-        'total_queries': data['total_queries'] ?? 0, // Total number of questions asked
-        'answered_queries': data['answered_queries'] ?? 0, // Questions the chatbot answered
-        'not_found_queries': data['not_found_queries'] ?? 0, // Questions not found in the handbook
-        'failed_queries': data['failed_queries'] ?? 0, // Questions that failed to process
-        'accuracy_rate': data['accuracy_rate'] ?? 0.0, // Chatbot’s accuracy rate
-        'most_frequent_questions': data['most_frequent_questions'] ?? [], // Common questions asked
+        'total_queries': data['total_queries'] ?? 0,
+        'answered_queries': data['answered_queries'] ?? 0,
+        'not_found_queries': data['not_found_queries'] ?? 0,
+        'failed_queries': data['failed_queries'] ?? 0,
+        'accuracy_rate': data['accuracy_rate'] ?? 0.0, 
+        'most_frequent_questions': data['most_frequent_questions'] ?? [],
       };
     }
-  } catch (_) {} // If something goes wrong, skip it
+  } 
+  catch (_) {} // If something goes wrong, skip it
   return {
     'total_queries': 0, // Default values when no data is found
     'answered_queries': 0,
@@ -126,10 +128,10 @@ Future<Map<String, dynamic>> submitFeedback(
       url,
       headers: {"Content-Type": "application/json"}, // Tell the server we’re sending JSON data
       body: jsonEncode({
-        "feedback_text": feedbackText, // The message written by the user
-        "rating": rating, // The user’s rating (like 1–5 stars)
-        "user_type": userType, // Type of user (ex. student, admin, etc.)
-        "session_id": sessionId // Unique ID for this session
+        "feedback_text": feedbackText,
+        "rating": rating, 
+        "user_type": userType,
+        "session_id": sessionId 
       }),
     );
 
@@ -153,12 +155,14 @@ Future<Map<String, dynamic>> submitFeedback(
 }
 
 
-class SplashWrapper extends StatefulWidget {
-  const SplashWrapper({super.key});
+class SplashWrapper extends StatefulWidget { // A widget that can update while the app is running
+  const SplashWrapper({super.key}); // gives Flutter a small label it can use to keep track of this widget
 
   @override
-  State<SplashWrapper> createState() => _SplashWrapperState();
+  // createState() tells Flutter which “helper object” should control this widget, and it creates an _SplashWrapperState to do that
+  State<SplashWrapper> createState() => _SplashWrapperState(); 
 }
+
 
 class _SplashWrapperState extends State<SplashWrapper> { // This class controls what happens during the splash screen
   bool _showMainApp = false; // Starts as false because we want to show the splash first
@@ -167,12 +171,14 @@ class _SplashWrapperState extends State<SplashWrapper> { // This class controls 
   void initState() { // Runs automatically when this screen first appears
     super.initState(); // Keeps Flutter’s setup working properly
     // Wait 4 seconds before showing the main app
-    Future.delayed(const Duration(seconds: 4), () { // Waits for 4 seconds
+    Future.delayed(const Duration(seconds: 4), () { 
       setState(() { // Updates the screen
         _showMainApp = true; // After waiting, switch to the main app
       });
     });
   }
+
+  // context - how a widget knows where it is in the app and what it has access to
 
   @override
   Widget build(BuildContext context) { // Decides what to show on the screen
@@ -183,11 +189,11 @@ class _SplashWrapperState extends State<SplashWrapper> { // This class controls 
       return MaterialApp( // Basic app setup
         debugShowCheckedModeBanner: false, // Hides the “debug” label
         home: Scaffold( // The main layout for this screen
-          backgroundColor: const Color(0xFF1976d2), // Set background color to blue
+          backgroundColor: const Color(0xFFFFFFFF), // Set background color to white
           body: Center( // Put things in the middle of the screen
-            child: Image.asset( // Show an image from the app’s files
-              'assets/images/ChatBookAILogoAppIcon.png', // The logo image to show
-              width: 180, // Size of the logo
+            child: Image.asset(
+              'assets/images/ChatBookAILogoSplashState.png',
+              width: 140,
             ),
           ),
         ),
@@ -224,9 +230,10 @@ class MainScreen extends StatefulWidget { // The main screen of the app
   _MainScreenState createState() => _MainScreenState();
 }
 
-//  what users see first when the app starts
+// what users see first when the app starts
 class _MainScreenState extends State<MainScreen> { // Holds data and actions for MainScreen
-  final GlobalKey<ChatPageState> _chatPageKey = GlobalKey<ChatPageState>(); // Key to access the chat page’s state
+  // GlobalKey - giving a widget a name tag, so you can talk to it from anywhere in your code
+  final GlobalKey<ChatPageState> _chatPageKey = GlobalKey<ChatPageState>();
 
   void _onFaqQuestionTap(String question) { // Runs when an FAQ question is tapped
     if (_chatPageKey.currentState != null) { // Checks if chat page is ready
@@ -237,14 +244,14 @@ class _MainScreenState extends State<MainScreen> { // Holds data and actions for
 
 
    // ---------- FAQ ----------  
-  void _showFAQPage() { // Opens the "Frequently Asked Questions" page  
+  void _showFAQPage() { 
     showModalBottomSheet( // Shows a slide-up window from the bottom of the screen  
       context: context, // Uses the current page’s context to display it  
       isScrollControlled: true, // Allows the sheet to take up more space if needed  
       backgroundColor: Colors.transparent, // Makes the background see-through  
       builder: (context) { // Builds what the bottom sheet will show  
         return _buildSheet( // Uses a helper function to build the sheet layout  
-          title: "FAQs", // Title shown at the top of the sheet  
+          title: "FAQs",  
           child: FaqPage(onQuestionTap: _onFaqQuestionTap), // Shows the FAQ page and handles question clicks  
         );  
       },  
@@ -252,7 +259,7 @@ class _MainScreenState extends State<MainScreen> { // Holds data and actions for
   }  
 
   // ---------- ABOUT ----------  
-  void _showAboutPage() { // Opens the "About" page  
+  void _showAboutPage() {  
     showModalBottomSheet( // Shows a slide-up window from the bottom of the screen  
       context: context, // Uses the current page’s context to display it  
       isScrollControlled: true, // Allows the sheet to take up more space if needed  
@@ -267,7 +274,7 @@ class _MainScreenState extends State<MainScreen> { // Holds data and actions for
   }  
 
   // ---------- FEEDBACK ----------  
-  void _showFeedbackPage() { // Opens the "Feedback" page  
+  void _showFeedbackPage() { 
     showModalBottomSheet( // Shows a slide-up window from the bottom of the screen  
       context: context, // Uses the current page’s context to display it  
       isScrollControlled: true, // Allows the sheet to take up more space if needed  
