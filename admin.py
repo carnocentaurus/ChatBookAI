@@ -1944,15 +1944,6 @@ def get_feedback_html(feedback_list, total_feedback, avg_rating, rating_distribu
                     </div>
                 </div>
             </div>
-
-            <!-- NEW EXPORT SECTION -->
-            <div class="card">
-                <h2>Export Feedback Data</h2>
-                <a href="/admin/export-feedback" class="btn btn-success">Export Feedback</a>
-                <p style="color: var(--muted); margin-top: 10px;">
-                    Download all user feedback including ratings, comments, timestamps, and user types as CSV.
-                </p>
-            </div>
             
             <div class="card">
                 <h2>Feedback by User Type</h2>
@@ -1979,6 +1970,15 @@ def get_feedback_html(feedback_list, total_feedback, avg_rating, rating_distribu
             <div class="card">
                 <h2>Rating Distribution</h2>
                 {rating_bars if rating_bars else '<p style="text-align: center; color: var(--muted);">No ratings yet</p>'}
+            </div>
+
+            <!-- NEW EXPORT SECTION -->
+            <div class="card">
+                <h2>Export Feedback Data</h2>
+                <a href="/admin/export-feedback" class="btn btn-success">Export Feedback</a>
+                <p style="color: var(--muted); margin-top: 10px;">
+                    Download all user feedback including ratings, comments, timestamps, and user types as CSV.
+                </p>
             </div>
             
             <div class="card">
