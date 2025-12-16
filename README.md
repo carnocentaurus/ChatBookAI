@@ -58,6 +58,16 @@ ChatBook AI is a conversational assistant built specifically for GSU students, f
 - **Google Gemini API Key**: Get from [Google AI Studio](https://makersuite.google.com/app/apikey)
 - **LangSmith Account**: For monitoring (optional but recommended)
 
+## Screenshots
+- [Loading Screen](./screenshots/LoadingScreen.jpg)
+- [Home Page](./screenshots/HomePage.jpg)
+- [Asking Chatbot](./screenshots/QueryingChatbot.jpg)
+- [Conversation with Chatbot](./screenshots/ChatbotConvos.jpg)
+- [Pop-up Menu](./screenshots/PopupMenu.jpg)
+- [Frequently Asked Questions](./screenshots/FAQPage.jpg)
+- [Send Feedback](./screenshots/FeedbackPage.jpg)
+- [About](./screenshots/AboutPage.jpg)
+
 ## Installation
 
 ### 1. Clone the Repository
