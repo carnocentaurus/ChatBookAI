@@ -189,11 +189,11 @@ class _SplashWrapperState extends State<SplashWrapper> { // This class controls 
       return MaterialApp( // Basic app setup
         debugShowCheckedModeBanner: false, // Hides the “debug” label
         home: Scaffold( // The main layout for this screen
-          backgroundColor: const Color(0xFFFFFFFF), // Set background color to white
+          backgroundColor: const Color(0xFF1976d2), // Set background color to white
           body: Center( // Put things in the middle of the screen
             child: Image.asset(
-              'assets/images/ChatBookAILogoSplashState.png',
-              width: 140,
+              'assets/images/ChatBookAILogoWhite.png',
+              width: 170,
             ),
           ),
         ),
@@ -359,7 +359,7 @@ Widget build(BuildContext context) {
                   children: [
                     // App logo (small icon)
                     Image.asset(
-                      'assets/images/ChatBookAILogoAppIcon.png',
+                      'assets/images/ChatBookAILogoWhite.png',
                       height: 28,
                       width: 28,
                       fit: BoxFit.contain, // It tells Flutter how to resize the image to fit its box.

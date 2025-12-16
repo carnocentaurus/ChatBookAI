@@ -223,7 +223,7 @@ void initState() {
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Image.asset(
-                              'assets/images/ChatBookAILogoSplashState.png',
+                              'assets/images/ChatBookAILogoBlue.png',
                               width: responsive.screenWidth * 0.35,
                               height: responsive.screenWidth * 0.35,
                               fit: BoxFit.contain,
