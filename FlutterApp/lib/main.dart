@@ -4,18 +4,17 @@ import 'dart:io'; // Gives access to platform information (e.g., Windows, Androi
 import 'dart:convert'; // Allows JSON encoding/decoding (used to convert data to/from the backend API).
 import 'package:flutter/material.dart'; // Core Flutter UI library — provides widgets, layouts, and themes.
 import 'package:http/http.dart' as http; // Enables HTTP requests to communicate with the FastAPI backend.
-import 'package:window_size/window_size.dart'; // Lets you control the window’s size, title, and position (desktop only).
+import 'package:window_size/window_size.dart'; // Lets you control the window's size, title, and position (desktop only).
+import 'package:flutter/foundation.dart' show kIsWeb; // Added to safely check for Web platform.
 
 // Import pages
 import 'chat.dart';
-import 'faq.dart';
-import 'feedback.dart';
-import 'about.dart';
 
 void main() { // The entry point of every Flutter app. Execution starts here.
   WidgetsFlutterBinding.ensureInitialized(); // Initializes Flutter engine bindings required for platform channel and native desktop method calls (like setWindowTitle).
 
-  if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+  // We check !kIsWeb first because Platform.isWindows crashes on web.
+  if (!kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
     setWindowTitle('ChatBook AI'); // Only visible on desktop title bars.
     setWindowMinSize(const Size(500, 1000)); // Defines the smallest possible window size (width: 500px, height: 1000px).  
     setWindowMaxSize(const Size(500, 1000)); // Defines the largest possible window size (same as min size).
@@ -34,6 +33,10 @@ String getBaseUrl() {
   } 
   else {
     // Local testing
+    // Added a check for web first to avoid Platform crash
+    if (kIsWeb) {
+      return "http://localhost:8000"; 
+    }
     if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
       return "http://127.0.0.1:8000";
     } 
@@ -65,20 +68,23 @@ Future<bool> isServerReady() async {
 // Creates a unique identifier for each app session by using the current timestamp in milliseconds.  
 String _sessionId = DateTime.now().millisecondsSinceEpoch.toString();
 
+// Getter function to access session ID from other files
+String getSessionId() => _sessionId;
 
-// This function sends your question to the chatbot backend, waits for a response, and returns the chatbot’s answer
+
+// This function sends your question to the chatbot backend, waits for a response, and returns the chatbot's answer
 Future<String> queryHandbook(String question) async {
   final url = Uri.parse("${getBaseUrl()}/chat"); // this is the endpoint where the chatbot API listens
   try {
     final response = await http.post( // Sends a POST request to the server (a way of sending data)
       url,
-      headers: {"Content-Type": "application/json"}, // Tells the server what type of data you’re sending (in this case, JSON)
+      headers: {"Content-Type": "application/json"}, // Tells the server what type of data you're sending (in this case, JSON)
       // The unique session ID ensures the backend maintains session context per user
       body: jsonEncode({"query": question, "session_id": _sessionId}),
     );
     if (response.statusCode == 200) { // Checks if the HTTP status code indicates success (200 OK).
       final responseData = jsonDecode(response.body);  // Turns that text into a map (like a dictionary).
-      return responseData["answer"] ?? "No response received"; // Picks the chatbot’s actual reply from that map. 
+      return responseData["answer"] ?? "No response received"; // Picks the chatbot's actual reply from that map. 
     } 
     else { // Executes if the server responds but with an error (e.g., 404, 500).
       return "Server error: ${response.statusCode}";
@@ -126,7 +132,7 @@ Future<Map<String, dynamic>> submitFeedback(
   try {
     final response = await http.post( // Send data to the backend
       url,
-      headers: {"Content-Type": "application/json"}, // Tell the server we’re sending JSON data
+      headers: {"Content-Type": "application/json"}, // Tell the server we're sending JSON data
       body: jsonEncode({
         "feedback_text": feedbackText,
         "rating": rating, 
@@ -150,7 +156,7 @@ Future<Map<String, dynamic>> submitFeedback(
     }
   } 
   catch (e) {
-    return {"success": false, "message": "Cannot connect to server: $e"}; // Show error if the server can’t be reached
+    return {"success": false, "message": "Cannot connect to server: $e"}; // Show error if the server can't be reached
   }
 }
 
@@ -159,7 +165,7 @@ class SplashWrapper extends StatefulWidget { // A widget that can update while t
   const SplashWrapper({super.key}); // gives Flutter a small label it can use to keep track of this widget
 
   @override
-  // createState() tells Flutter which “helper object” should control this widget, and it creates an _SplashWrapperState to do that
+  // createState() tells Flutter which "helper object" should control this widget, and it creates an _SplashWrapperState to do that
   State<SplashWrapper> createState() => _SplashWrapperState(); 
 }
 
@@ -169,7 +175,7 @@ class _SplashWrapperState extends State<SplashWrapper> { // This class controls 
 
   @override
   void initState() { // Runs automatically when this screen first appears
-    super.initState(); // Keeps Flutter’s setup working properly
+    super.initState(); // Keeps Flutter's setup working properly
     // Wait 4 seconds before showing the main app
     Future.delayed(const Duration(seconds: 4), () { 
       setState(() { // Updates the screen
@@ -187,9 +193,9 @@ class _SplashWrapperState extends State<SplashWrapper> { // This class controls 
     } 
     else { // If still false, keep showing the splash
       return MaterialApp( // Basic app setup
-        debugShowCheckedModeBanner: false, // Hides the “debug” label
+        debugShowCheckedModeBanner: false, // Hides the "debug" label
         home: Scaffold( // The main layout for this screen
-          backgroundColor: const Color(0xFF1976d2), // Set background color to white
+          backgroundColor: const Color(0xFF1976d2), // Set background color to blue
           body: Center( // Put things in the middle of the screen
             child: Image.asset(
               'assets/images/ChatBookAILogoWhite.png',
@@ -206,7 +212,7 @@ class _SplashWrapperState extends State<SplashWrapper> { // This class controls 
 // the overall app container
 class MyApp extends StatefulWidget { // Main app widget that can change while running
   @override
-  _MyAppState createState() => _MyAppState(); // Creates the app’s state
+  _MyAppState createState() => _MyAppState(); // Creates the app's state
 }
 
 class _MyAppState extends State<MyApp> { // Holds data and behavior for MyApp
@@ -219,225 +225,8 @@ class _MyAppState extends State<MyApp> { // Holds data and behavior for MyApp
         primaryColor: const Color(0xFF1976d2), // Main blue color
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1976d2)),  // Creates color shades from blue
       ),
-      home: MainScreen(), // Opens MainScreen when app starts
+      // UPDATED: Directly load ChatPage which now has built-in sidebar navigation
+      home: ChatPage(), // Opens ChatPage when app starts
     );
   }
 }
-
-// controls the app’s behavior and look
-class MainScreen extends StatefulWidget { // The main screen of the app
-  @override 
-  _MainScreenState createState() => _MainScreenState();
-}
-
-// what users see first when the app starts
-class _MainScreenState extends State<MainScreen> { // Holds data and actions for MainScreen
-  // GlobalKey - giving a widget a name tag, so you can talk to it from anywhere in your code
-  final GlobalKey<ChatPageState> _chatPageKey = GlobalKey<ChatPageState>();
-
-  void _onFaqQuestionTap(String question) { // Runs when an FAQ question is tapped
-    if (_chatPageKey.currentState != null) { // Checks if chat page is ready
-      _chatPageKey.currentState!.autoQuery(question); // Sends the question to the chat automatically
-    }
-    Navigator.of(context).pop(); // Closes the FAQ or side menu
-  }
-
-
-   // ---------- FAQ ----------  
-  void _showFAQPage() { 
-    showModalBottomSheet( // Shows a slide-up window from the bottom of the screen  
-      context: context, // Uses the current page’s context to display it  
-      isScrollControlled: true, // Allows the sheet to take up more space if needed  
-      backgroundColor: Colors.transparent, // Makes the background see-through  
-      builder: (context) { // Builds what the bottom sheet will show  
-        return _buildSheet( // Uses a helper function to build the sheet layout  
-          title: "FAQs",  
-          child: FaqPage(onQuestionTap: _onFaqQuestionTap), // Shows the FAQ page and handles question clicks  
-        );  
-      },  
-    );  
-  }  
-
-  // ---------- ABOUT ----------  
-  void _showAboutPage() {  
-    showModalBottomSheet( // Shows a slide-up window from the bottom of the screen  
-      context: context, // Uses the current page’s context to display it  
-      isScrollControlled: true, // Allows the sheet to take up more space if needed  
-      backgroundColor: Colors.transparent, // Makes the background see-through  
-      builder: (context) { // Builds what the bottom sheet will show  
-        return _buildSheet( // Uses a helper function to build the sheet  
-          title: "About ChatBook AI", // Title shown at the top of the sheet  
-          child: AboutPage(), // Shows the AboutPage content inside the sheet  
-        );  
-      },  
-    );  
-  }  
-
-  // ---------- FEEDBACK ----------  
-  void _showFeedbackPage() { 
-    showModalBottomSheet( // Shows a slide-up window from the bottom of the screen  
-      context: context, // Uses the current page’s context to display it  
-      isScrollControlled: true, // Allows the sheet to take up more space if needed  
-      backgroundColor: Colors.transparent, // Makes the background see-through  
-      builder: (context) { // Builds what the bottom sheet will show  
-        return _buildSheet( // Uses a helper function to build the sheet  
-          title: "Send Feedback", // Title shown at the top of the sheet  
-          child: FeedbackPage(sessionId: _sessionId), // Shows the feedback form with the current session ID  
-        );  
-      },  
-    );  
-  }  
-
-
-    // ---------- REUSABLE SHEET BUILDER ----------  
-  Widget _buildSheet({required String title, required Widget child}) { // Makes a slide-up window that can be reused  
-    return DraggableScrollableSheet( // A bottom sheet that can be dragged up or down  
-      initialChildSize: 0.8, // Starts at 80% of the screen height  
-      minChildSize: 0.5, // Can shrink to 50% of the screen height  
-      maxChildSize: 0.95, // Can stretch up to 95% of the screen height  
-      builder: (context, scrollController) { // Builds what will appear inside the sheet  
-        return Container( // The main box holding everything inside  
-          decoration: const BoxDecoration( // Adds style to the container  
-            color: Colors.white, // Sets the background color to white  
-            borderRadius: BorderRadius.only( // Rounds the top corners  
-              topLeft: Radius.circular(20),  
-              topRight: Radius.circular(20),  
-            ),  
-          ),  
-          child: Column( // Arranges things from top to bottom  
-            children: [  
-              Container( // The top header area of the sheet  
-                color: const Color(0xFF1976d2), // Sets the header color (blue)  
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14), // Adds space inside the header  
-                child: Row( // Puts the title and close button side by side  
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween, // Spreads them apart  
-                  children: [  
-                    Text(title, // Shows the title text  
-                        style: const TextStyle(  
-                            color: Colors.white, // White text color  
-                            fontSize: 18, // Text size  
-                            fontWeight: FontWeight.bold)), // Makes the title bold  
-                    IconButton( // A button with an icon  
-                      icon: const Icon(Icons.close, color: Colors.white), // “X” close icon in white  
-                      onPressed: () => Navigator.of(context).pop(), // Closes the sheet when pressed  
-                    ),  
-                  ],  
-                ),  
-              ),  
-              Expanded(child: child), // Fills the rest of the space with the given content  
-            ],  
-          ),  
-        );  
-      },  
-    );  
-  }  
-
-
-// Describes how the home page looks and behaves
-@override
-Widget build(BuildContext context) {
-  return Scaffold( // Main layout structure for the screen
-    resizeToAvoidBottomInset: true, // Moves up chat box when keyboard appears
-    backgroundColor: Colors.white, // Background color
-    body: Column( // The main content of the screen goes inside body.
-      children: [
-        // Top Header Bar
-        Container( // Container is like a box that can have color, padding, and other styles.
-          color: const Color(0xFF1976d2), // Blue header color
-          padding: EdgeInsets.only(
-            // adds spacing for the status bar (so text doesn’t touch the top of the screen).
-            top: MediaQuery.of(context).padding.top + 10,
-            left: 12,
-            right: 8,
-            bottom: 10,
-          ),
-          child: Row( // A Row arranges things horizontally (side by side).
-            children: [
-              // Left side: Icon + Title
-              Expanded( // Expanded means this section will take up all available space on the left side.
-                child: Row(
-                  children: [
-                    // App logo (small icon)
-                    Image.asset(
-                      'assets/images/ChatBookAILogoWhite.png',
-                      height: 28,
-                      width: 28,
-                      fit: BoxFit.contain, // It tells Flutter how to resize the image to fit its box.
-                    ),
-                    const SizedBox(width: 10), // Adds space (10 pixels) between the logo and the text.
-
-                    // App title text
-                    Flexible( // Flexible makes sure the text doesn’t overflow if it’s too long.
-                      child: Text(
-                        "ChatBook AI",
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          fontFamily: 'Poppins', // Uses your Poppins font
-                        ),
-                        overflow: TextOverflow.ellipsis, // ellipsis adds “…” if it can’t fit.
-                        maxLines: 1, // It limits the text to only one line.
-                        softWrap: false, // tells Flutter not to automatically move the text to the next line, even if it’s too long.
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              // this creates the three-dot menu button on the right side.
-              PopupMenuButton<String>(
-                icon: const Icon(Icons.more_vert, color: Colors.white),
-                onSelected: (String result) { // a callback function that runs when the user picks an option from the menu.
-                  if (result == 'faq') {
-                    _showFAQPage();
-                  } 
-                  else if (result == 'feedback') {
-                    _showFeedbackPage();
-                  } 
-                  else if (result == 'about') {
-                    _showAboutPage();
-                  }
-                },
-                itemBuilder: (context) => [
-                  const PopupMenuItem(
-                    value: 'faq',
-                    child: ListTile(
-                      leading: Icon(Icons.help_outline),
-                      title: Text('FAQ'),
-                      dense: true, // Makes the list item more compact — less space between items vertically.
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'feedback',
-                    child: ListTile(
-                      leading: Icon(Icons.feedback_outlined),
-                      title: Text('Feedback'),
-                      dense: true,
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'about',
-                    child: ListTile(
-                      leading: Icon(Icons.info_outline),
-                      title: Text('About'),
-                      dense: true,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-
-        // Chat Body Area
-        Expanded( // Expanded fills the rest of the screen below the header bar.
-          child: Container(
-            color: const Color(0xFFF4F6F9), // Light gray background
-            child: ChatPage(key: _chatPageKey), // Main chat screen
-          ),
-        ),
-      ],
-    ),
-  );
-}}
