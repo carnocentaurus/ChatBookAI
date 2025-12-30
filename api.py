@@ -1277,6 +1277,35 @@ async def chat(request: Request):
         return {"answer": error_msg}  # Send the error message to the user
     
 
+# Create a model for the incoming log data
+class ChatLog(BaseModel):
+    query: str
+    answer: str
+    session_id: str
+
+# Add this route to handle the logging
+@app.post("/log_to_csv")
+async def log_to_csv_endpoint(log: ChatLog):
+    try:
+        # 1. Clean data using your existing sanitize_text
+        clean_query = sanitize_text(log.query)
+        clean_answer = sanitize_text(log.answer)
+        timestamp = datetime.now().isoformat()
+
+        # 2. Append to the master CSV safely
+        with open(LOG_FILE, 'a', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f, quoting=csv.QUOTE_ALL) # This fixes the "double quote" error!
+            writer.writerow([timestamp, clean_query, clean_answer])
+
+        # 3. Add to SQLite memory so it shows in your Admin Panel
+        memory.add_conversation(log.session_id, clean_query, clean_answer, "Web/Remote Log")
+
+        return {"status": "success"}
+    except Exception as e:
+        print(f"❌ Server logging error: {e}")
+        return {"status": "error", "message": str(e)}, 500
+    
+
 @app.post("/feedback")
 async def submit_feedback(feedback: FeedbackSubmission):
     """Handles feedback from users"""

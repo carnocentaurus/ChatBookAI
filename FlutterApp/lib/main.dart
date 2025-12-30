@@ -74,24 +74,51 @@ String getSessionId() => _sessionId;
 
 // This function sends your question to the chatbot backend, waits for a response, and returns the chatbot's answer
 Future<String> queryHandbook(String question) async {
-  final url = Uri.parse("${getBaseUrl()}/chat"); // this is the endpoint where the chatbot API listens
+  final url = Uri.parse("${getBaseUrl()}/chat");
+  final logUrl = Uri.parse("${getBaseUrl()}/log_to_csv");
+
   try {
-    final response = await http.post( // Sends a POST request to the server (a way of sending data)
+    // 1. Get the answer from Gemini
+    final response = await http.post(
       url,
-      headers: {"Content-Type": "application/json"}, // Tells the server what type of data you're sending (in this case, JSON)
-      // The unique session ID ensures the backend maintains session context per user
+      headers: {"Content-Type": "application/json"},
       body: jsonEncode({"query": question, "session_id": _sessionId}),
     );
-    if (response.statusCode == 200) { // Checks if the HTTP status code indicates success (200 OK).
-      final responseData = jsonDecode(response.body);  // Turns that text into a map (like a dictionary).
-      return responseData["answer"] ?? "No response received"; // Picks the chatbot's actual reply from that map. 
-    } 
-    else { // Executes if the server responds but with an error (e.g., 404, 500).
+
+    if (response.statusCode == 200) {
+      final responseData = jsonDecode(response.body);
+      String answer = responseData["answer"] ?? "No response received";
+
+      // 2. Log to server
+      // We removed .catchError and wrapped it in a separate try/catch 
+      // to keep it clean and avoid the type mismatch error.
+      _sendAndForgetLog(logUrl, question, answer);
+
+      return answer;
+    } else {
       return "Server error: ${response.statusCode}";
     }
-  } 
-  catch (e) {
+  } catch (e) {
     return "⚠️ Cannot connect to server. Error: $e";
+  }
+}
+
+
+// Separate helper to keep queryHandbook clean and fix the 'void' return error
+void _sendAndForgetLog(Uri url, String query, String answer) async {
+  try {
+    await http.post(
+      url,
+      headers: {"Content-Type": "application/json"},
+      body: jsonEncode({
+        "query": query,
+        "answer": answer,
+        "session_id": _sessionId,
+      }),
+    );
+  } catch (e) {
+    // debugPrint is preferred over print for production code
+    debugPrint("Background logging failed: $e");
   }
 }
 
