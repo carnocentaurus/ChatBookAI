@@ -1,15 +1,12 @@
 V6
 
-next:
-1. see chatbot response in recent queries and faq
-2. move export data to manage information section
-3. chatpot should respond "check internet connection" or something if it hasnt responded for 30 seconds or longer
-4. add ability to stop chatbot response when chatbot is responding
-5. seperate faqs into two. all answereed queries that has been asked atleast twice and all not answered queries that has been asked atleast twice and label resolved queries as resolved
-6. find a way to make chatbot respond faster without reducing response quality
-7. find a way to start system without manually running uvicorn
+1. actual chatbot responses are now visible in recent queries
+2. added ability to stop chabot response
+3. seperate section for unanswered queries in faq analysis page
+4. added ability to mark multiple queries as resolved at once in manage queries page
+5. grouped similar queries together in faq analysis page
+6. web implementation
 
-possible future features:
-1. add search/filter functionality to manage queries
-2. select multiple queries to mark as resolved simultaneously
-3. group similar queries together ("dean of cbm" vs "who is cbm dean")
+next:
+see chatbot responding/typing live
+find a way to start system without manually running uvicorn
