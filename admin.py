@@ -500,48 +500,6 @@ def setup_admin_routes(app, memory, LOG_FILE, MEMORY_DB):
             not_answered_list = []
 
         return HTMLResponse(content=get_full_faq_html(faq_list, not_answered_list))
-
-    
-    @app.get("/admin/manage-queries", response_class=HTMLResponse)  # Page for viewing unanswered questions
-    async def admin_manage_queries(credentials: HTTPBasicCredentials = Depends(verify_admin)):  # Only admin can open this page
-        """Shows questions that have not been answered or resolved yet"""
-
-        try:
-            with open(LOG_FILE, "r", encoding="utf-8") as f:  # Open the log file that stores all user questions
-                reader = list(csv.DictReader(f))  # Read all entries from the log
-
-            not_answered_queries = []  # This will store questions that still need answers
-
-            for record in reader:  # Go through each question record
-                answered_field = (record.get("answered") or "").strip().lower()  # Check if marked as answered
-                query_text = (record.get("query_text") or "").strip()  # Get the question text
-                resolved_date = (record.get("resolved_date") or "").strip()  # Check if marked as resolved
-        
-                # Add to list only if it’s not answered, not resolved, and not empty
-                if (answered_field not in ["true", "1", "yes"] and 
-                    query_text and 
-                    not resolved_date):
-                    not_answered_queries.append(record)
-
-            # Count how many times each unanswered question appears
-            not_answered_counter = Counter()
-            for query in not_answered_queries:
-                query_text = (query.get("query_text") or "").strip().lower()
-                if query_text:
-                    # Adds one each time the same question appears
-                    not_answered_counter[query_text] += 1
-
-            # Sort questions by how often they appear
-            all_needing_attention = not_answered_counter.most_common()
-
-        except FileNotFoundError:
-            all_needing_attention = []  # If no log file exists yet, show nothing
-        except Exception as e:
-            print(f"Error in manage queries: {e}")  # Print any problem found
-            all_needing_attention = []  # Show an empty list if something goes wrong
-
-        # Show the Manage Queries page with all questions that still need answers
-        return HTMLResponse(content=get_manage_queries_with_resolved_html(all_needing_attention))
     
     
     @app.get("/admin/feedback", response_class=HTMLResponse)  # Page to view user feedback
@@ -603,6 +561,58 @@ def setup_admin_routes(app, memory, LOG_FILE, MEMORY_DB):
         except Exception as e:
             print(f"Error exporting feedback: {e}")
             raise HTTPException(status_code=404, detail=f"Error exporting feedback: {str(e)}")
+        
+
+    @app.get("/admin/manage-queries", response_class=HTMLResponse)  # Page for viewing unanswered questions
+    async def admin_manage_queries(credentials: HTTPBasicCredentials = Depends(verify_admin)):  # Only admin can open this page
+        """Shows questions that have not been answered or resolved yet"""
+
+        try:
+            with open(LOG_FILE, "r", encoding="utf-8") as f:  # Open the log file that stores all user questions
+                reader = list(csv.DictReader(f))  # Read all entries from the log
+
+            not_answered_queries = []  # This will store questions that still need answers
+
+            for record in reader:  # Go through each question record
+                answered_field = (record.get("answered") or "").strip().lower()  # Check if marked as answered
+                query_text = (record.get("query_text") or "").strip()  # Get the question text
+                resolved_date = (record.get("resolved_date") or "").strip()  # Check if marked as resolved
+        
+                # Add to list only if it’s not answered, not resolved, and not empty
+                if (answered_field not in ["true", "1", "yes"] and 
+                    query_text and 
+                    not resolved_date):
+                    not_answered_queries.append(query_text)
+
+            # Count how many times each unanswered question appears
+            not_answered_counter = Counter()
+            for text in not_answered_queries:
+                query_text_lower = text.strip().lower()
+                if query_text_lower:
+                    # Adds one each time the same question appears
+                    not_answered_counter[query_text_lower] += 1
+
+            # --- NEW SIMILARITY LOGIC START ---
+            # Convert counter to list for the similarity function
+            frequent_list = [(q, count) for q, count in not_answered_counter.items()]
+            
+            # Group variations (e.g., "enrollement flow" and "enrollment flowchart")
+            # This is the magic that turns your scattered 1s and 2s into a total of 4
+            grouped_data = group_similar_queries(frequent_list, threshold=0.80)
+            
+            # Re-format back into the list format expected by the HTML function
+            # We use the 'representative' text and 'total_count' from the group
+            all_needing_attention = [(g['representative'], g['total_count']) for g in grouped_data]
+            # --- NEW SIMILARITY LOGIC END ---
+
+        except FileNotFoundError:
+            all_needing_attention = []  # If no log file exists yet, show nothing
+        except Exception as e:
+            print(f"Error in manage queries: {e}")  # Print any problem found
+            all_needing_attention = []  # Show an empty list if something goes wrong
+
+        # Show the Manage Queries page with all questions that still need answers
+        return HTMLResponse(content=get_manage_queries_with_resolved_html(all_needing_attention))
 
     
     @app.post("/admin/mark-resolved")  # When the admin marks a question as resolved
@@ -630,8 +640,12 @@ def setup_admin_routes(app, memory, LOG_FILE, MEMORY_DB):
             # Go through every record in the file
             for record in reader:
                 # Check if this record matches the question the admin wants resolved
-                # ADDED 'or ""' to handle None values and prevent 'NoneType' errors
-                if (record.get("query_text") or "").strip().lower() == (question or "").strip().lower():
+                # UPDATED: Use similarity check (0.80) instead of exact match (==)
+                # This ensures typos like "enrollement" are cleared when you resolve "enrollment"
+                record_text = (record.get("query_text") or "").strip().lower()
+                target_text = (question or "").strip().lower()
+
+                if should_group_queries(record_text, target_text, 0.80):
                     # If not yet resolved, mark it with today’s date
                     if not (record.get("resolved_date") or "").strip():
                         record["resolved_date"] = today
@@ -648,8 +662,8 @@ def setup_admin_routes(app, memory, LOG_FILE, MEMORY_DB):
                     writer.writeheader()
                     writer.writerows(reader)
 
-            # Print a note in the the terminal showing how many were marked as resolved
-            print(f"Marked {updated_count} instances of '{question}' as resolved")
+            # Print a note in the terminal showing how many were marked as resolved
+            print(f"Marked {updated_count} instances related to '{question}' as resolved")
 
             # After marking, send the admin back to the manage queries page
             return RedirectResponse(url="/admin/manage-queries", status_code=303)
@@ -687,8 +701,15 @@ def setup_admin_routes(app, memory, LOG_FILE, MEMORY_DB):
                 # ADDED 'or ""' to handle None values and prevent 'NoneType' errors
                 query_text = (record.get("query_text") or "").strip().lower()
             
-                # Check if this record matches any of the selected queries
-                if query_text in clean_selected:  # Compare with selected list
+                # --- UPDATED SIMILARITY LOGIC ---
+                # Check if this record matches OR is 80% similar to any of the selected queries
+                is_similar_match = False
+                for selected in clean_selected:
+                    if should_group_queries(query_text, selected, 0.80):
+                        is_similar_match = True
+                        break
+
+                if is_similar_match:  # Compare with selected list (using similarity)
                     if not (record.get("resolved_date") or "").strip():  # If no resolved date yet
                         record["resolved_date"] = today
                         updated_count += 1
