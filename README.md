@@ -11,6 +11,7 @@ ChatBook AI is a conversational assistant built specifically for GSU students, f
 - **Conversation Memory** - Maintains context across multiple questions
 - **Admin Dashboard** - Comprehensive analytics and content management
 - **Flutter Mobile App** - Native mobile interface for iOS and Android
+- **Web Interface** - Responsive web interface
 - **Feedback System** - Collects user ratings and feedback
 - **Custom Information** - Admin-controlled knowledge base additions
 - **Typo Tolerance** - Handles common misspellings and variations
@@ -52,26 +53,35 @@ ChatBook AI is a conversational assistant built specifically for GSU students, f
 - **NumPy** - Numerical computing
 - **Pandas** - Data manipulation
 - **tqdm** - Progress bars
-
 - **Python**: 3.10.11 (required for LangChain compatibility)
 - **Flutter**: Latest stable version (for mobile app)
 - **Google Gemini API Key**: Get from [Google AI Studio](https://makersuite.google.com/app/apikey)
 - **LangSmith Account**: For monitoring (optional but recommended)
 
 ## Screenshots
-- [Loading Screen](./screenshots/LoadingScreen.jpg)
-- [Home Page](./screenshots/HomePage.jpg)
-- [Asking Chatbot](./screenshots/QueryingChatbot.jpg)
-- [Conversation with Chatbot](./screenshots/ChatbotConvos.jpg)
-- [Pop-up Menu](./screenshots/PopupMenu.jpg)
-- [Frequently Asked Questions](./screenshots/FAQPage.jpg)
-- [Send Feedback](./screenshots/FeedbackPage.jpg)
-- [About](./screenshots/AboutPage.jpg)
+
+### Mobile Screenshots
+- [Loading Screen](./screenshots/mobile/LoadingScreen.jpg)
+- [Home Page](./screenshots/mobile/HomePage.jpg)
+- [Asking Chatbot](./screenshots/mobile/QueryingChatbot.jpg)
+- [Chatbot Conversation](./screenshots/mobile/ChatbotConvos.jpg)
+- [Sidebar](./screenshots/mobile/sidebar.jpg)
+- [Frequently Asked Questions Page](./screenshots/mobile/FAQPage.jpg)
+- [Feedback Page](./screenshots/mobile/FeedbackPage.jpg)
+- [About Page](./screenshots/mobile/AboutPage.jpg)
+
+### Desktop/Web Screenshots
+- [Loading Screen](./screenshots/web/LoadingScreenWeb.png)
+- [Home Page](./screenshots/web/HomePageWeb.png)
+- [Asking Chatbot](./screenshots/web/QueryingChatbotWeb.png)
+- [Chatbot Conversation](./screenshots/web/ChatbotConvosWeb.png)
+- [Frequently Asked Questions Page](./screenshots/web/FAQPageWeb.png)
+- [Feedback Page](./screenshots/web/FeedbackPageWeb.png)
+- [About Page](./screenshots/web/AboutPageWeb.png)
 
 ## Installation
 
 ### 1. Clone the Repository
-
 ```bash
 git clone <https://github.com/carnocentaurus/ChatBookAI>
 cd CapstoneSystemV6
@@ -80,7 +90,6 @@ cd CapstoneSystemV6
 ### 2. Backend Setup
 
 #### Create Virtual Environment
-
 ```bash
 python -m venv .venv
 
@@ -92,7 +101,6 @@ source .venv/bin/activate
 ```
 
 #### Install Dependencies
-
 ```bash
 pip install -r requirements.txt
 ```
@@ -100,7 +108,6 @@ pip install -r requirements.txt
 All required packages including fuzzy matching libraries are included in `requirements.txt`.
 
 #### Create Environment File
-
 Create a `.env` file in the root directory:
 
 ```env
@@ -129,13 +136,14 @@ ADMIN_PASSWORD=change_this_secure_password
 ```bash
 mkdir -p data
 ```
+
 Place your university handbook PDF in the `data` folder:
+
 ```
 data/handbook.pdf
 ```
 
 ### 4. Frontend Setup (Flutter)
-
 ```bash
 cd FlutterApp  # or your Flutter app directory
 flutter pub get
@@ -144,12 +152,12 @@ flutter pub get
 ## Running the Application
 
 ### Start the Backend Server
-
 ```bash
 uvicorn api:app --host 0.0.0.0 --port 8000
 ```
 
 The server will:
+
 1. Load the handbook PDF
 2. Create/load the vector database (first run takes longer)
 3. Start the API server
@@ -161,11 +169,14 @@ The server will:
 - API Report: `http://localhost:8000/report`
 
 ### Start the Flutter App
+
 ```bash
 cd FlutterApp
 flutter run
 ```
+
 Or build for production:
+
 ```bash
 # Android
 flutter build apk
@@ -190,13 +201,14 @@ flutter build ios
    - Help improve the system
 
 ### For Administrators
+
 Access the admin panel at: `http://localhost:8000/admin`
 **Default Credentials:**
+
 - Username: `admin`
 - Password: (set in `.env` file)
 
 #### Admin Dashboard Features:
-
 1. **System Overview**
    - Total queries processed
    - Success rate statistics
@@ -246,7 +258,9 @@ CapstoneSystemV6/
 ## Configuration
 
 ### Adjusting AI Parameters
+
 In `api.py`, modify the `generation_config`
+
 ```python
 generation_config = genai.types.GenerationConfig(
     temperature=0.1,      # Lower = more focused (0.0-1.0)
@@ -257,6 +271,7 @@ generation_config = genai.types.GenerationConfig(
 ```
 
 ### Vector Database Settings
+
 In `load_embeddings_and_db()`:
 
 ```python
@@ -266,6 +281,7 @@ batch_size=50,           # Processing batch size
 ```
 
 ### Retrieval Settings
+
 ```python
 search_kwargs={
     "k": 10,             # Number of chunks to retrieve
@@ -351,6 +367,7 @@ All admin endpoints require **HTTP Basic Authentication**.
 ### Issue: "Handbook not found"
 
 **Solution:**
+
 1. Ensure `data/handbook.pdf` exists
 2. Check file permissions
 3. Verify PDF is not corrupted
@@ -358,6 +375,7 @@ All admin endpoints require **HTTP Basic Authentication**.
 ### Issue: "No results found"
 
 **Solution:**
+
 1. Check if vector database is created (`data/chroma_db/` exists)
 2. Delete `chroma_db` folder and restart (will reindex)
 3. Add custom information via admin panel
@@ -365,6 +383,7 @@ All admin endpoints require **HTTP Basic Authentication**.
 ### Issue: Slow responses
 
 **Solution:**
+
 1. Reduce chunk retrieval: Lower `k` value
 2. Check internet connection (Gemini API)
 3. Monitor LangSmith for bottlenecks
@@ -372,6 +391,7 @@ All admin endpoints require **HTTP Basic Authentication**.
 ### Issue: Admin login not working
 
 **Solution:**
+
 1. Check `.env` file has correct credentials
 2. Clear browser cache
 3. Verify `ADMIN_USERNAME` and `ADMIN_PASSWORD` are set
@@ -419,17 +439,20 @@ All admin endpoints require **HTTP Basic Authentication**.
 ## Updating the System
 
 ### Update Dependencies
+
 ```bash
 pip install --upgrade -r requirements.txt
 ```
 
 ### Backup Data
+
 ```bash
 # Backup important data before updates
 cp -r data/ data_backup/
 ```
 
 ### Reset Vector Database
+
 ```bash
 # If having issues, delete and rebuild
 rm -rf data/chroma_db/
@@ -504,7 +527,8 @@ rm -rf data/chroma_db/
 - Custom app logo, splash screen, and fonts
 - APK deployment via mobile hotspot
 
-### V6 (December 5, 2025) - Current
+### V6 (December 30, 2025) - Current
+
 - **Chatbot Response Visibility** - Full responses shown in Recent Queries
 - **Stop Response Feature** - Ability to halt ongoing chatbot responses
 - **Unanswered Queries Section** - Dedicated section in FAQ Analysis
@@ -515,8 +539,10 @@ rm -rf data/chroma_db/
 - **Query Preprocessing** - Automatic typo correction and normalization
 - **Improved FAQ Analysis** - Side-by-side popular vs unanswered questions
 - **Advanced Custom Info Matching** - Multi-strategy relevance scoring
+- **Web Interface** - Responsive web interface
 
 ## Support
+
 For issues or questions:
 1. Check troubleshooting section above
 2. Review LangSmith traces for errors
