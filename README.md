@@ -79,6 +79,18 @@ ChatBook AI is a conversational assistant built specifically for GSU students, f
 - [Feedback Page](./screenshots/web/FeedbackPageWeb.png)
 - [About Page](./screenshots/web/AboutPageWeb.png)
 
+### Admin Panel Screenshots
+- [System Stats](./screenshots/AdminPanel/AdminDashboardSystemOverview.png)
+- [Recent Queries](./screenshots/AdminPanel/AdminDashboardRecentQueries.png)
+- [Manage Info](./screenshots/AdminPanel/AdminManageInfo.png)
+- [Add New Info](./screenshots/AdminPanel/AdminManageInfoAddNewInfo.png)
+- [Update Handbook PDF](./screenshots/AdminPanel/AdminManageInfoUpdateHandbookPDF.png)
+- [FAQ Analysis](./screenshots/AdminPanel/AdminFAQAnalysis.png)
+- [Manage Queries](./screenshots/AdminPanel/AdminManageQueries.png)
+- [Feedback Statistics](./screenshots/AdminPanel/AdminFeedbackStats.png)
+- [Feedback Ratings](./screenshots/AdminPanel/AdminFeedbackRatingDistribution.png)
+- [Feedback List](./screenshots/AdminPanel/AdminFeedbackAllFeedbacks.png)
+
 ## Installation
 
 ### 1. Clone the Repository
