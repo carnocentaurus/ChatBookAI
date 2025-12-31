@@ -36,3 +36,9 @@ build_db.py
 .vscode/
 .idea/
 *.swp
+
+#data folder
+data/
+
+#csv files
+*.csv
