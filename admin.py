@@ -630,9 +630,10 @@ def setup_admin_routes(app, memory, LOG_FILE, MEMORY_DB):
             # Go through every record in the file
             for record in reader:
                 # Check if this record matches the question the admin wants resolved
-                if record.get("query_text", "").strip().lower() == question.lower():
+                # ADDED 'or ""' to handle None values and prevent 'NoneType' errors
+                if (record.get("query_text") or "").strip().lower() == (question or "").strip().lower():
                     # If not yet resolved, mark it with today’s date
-                    if not record.get("resolved_date", "").strip():
+                    if not (record.get("resolved_date") or "").strip():
                         record["resolved_date"] = today
                         updated_count += 1
                     # Handle older files that don’t have this column yet
@@ -678,13 +679,17 @@ def setup_admin_routes(app, memory, LOG_FILE, MEMORY_DB):
             today = datetime.now().strftime("%Y-%m-%d")
             updated_count = 0
 
+            # Pre-clean the selected queries list once
+            clean_selected = [q.strip().lower() for q in selected_queries if q]
+
             # Mark all selected queries as resolved
             for record in reader:
-                query_text = record.get("query_text", "").strip().lower()
+                # ADDED 'or ""' to handle None values and prevent 'NoneType' errors
+                query_text = (record.get("query_text") or "").strip().lower()
             
                 # Check if this record matches any of the selected queries
-                if query_text in [q.lower() for q in selected_queries]:  # Compare with selected list
-                    if not record.get("resolved_date", "").strip():  # If no resolved date yet
+                if query_text in clean_selected:  # Compare with selected list
+                    if not (record.get("resolved_date") or "").strip():  # If no resolved date yet
                         record["resolved_date"] = today
                         updated_count += 1
                     elif "resolved_date" not in record: # Handle missing field
