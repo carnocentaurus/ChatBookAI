@@ -40,6 +40,7 @@ from fuzzywuzzy import fuzz
 
 # admin
 from admin import setup_admin_routes  # Imports routes for admin panel (feedback, reports, etc.)
+from admin import group_similar_queries
 
 api_key = os.getenv("LANGCHAIN_API_KEY")  # gets the key from the .env file
 print(f"Using API Key: {api_key[:20]}...{api_key[-10:] if api_key else 'NONE'}")  # shows part of the key
@@ -1035,57 +1036,44 @@ async def root():
 
 # This route shows a public report of chatbot performance
 @app.get("/report")
-def get_report():
-    """Shows how many questions were answered or not, and lists frequent ones"""
+async def get_report():
     try:
-        # Try to open the log file where all queries are saved
+        # 1. Check if logs exist
+        if not os.path.exists(LOG_FILE):
+            return {"most_frequent_questions": []}
+
+        # 2. Read the raw chat logs
         with open(LOG_FILE, "r", encoding="utf-8") as f:
-            reader = list(csv.DictReader(f))  # read the file as a list of dictionaries
-    except FileNotFoundError:
-        # If the log file doesn't exist yet, return empty results
-        return {
-            "total_queries": 0,
-            "answered_queries": 0,
-            "not_answered_queries": 0,
-            "most_frequent_questions": []
-        }
+            reader = list(csv.DictReader(f))
 
-    # If the log exists but is empty
-    if not reader:
-        return {
-            "total_queries": 0,
-            "answered_queries": 0,
-            "not_answered_queries": 0,
-            "most_frequent_questions": []
-        }
+        # 3. Get raw counts (identical to how the admin starts)
+        query_counts = Counter(
+            (r.get("query_text") or "").strip().lower() 
+            for r in reader if r.get("query_text")
+        )
 
-    total = len(reader)  # total number of questions in the log
-    
-    # Count how many were answered
-    answered = sum(
-        1 for r in reader 
-        if (r.get("answered") or "").strip().lower() in ["true", "1", "yes"]
-    )
+        # 4. Prepare data for the grouping function
+        # We only look at questions asked at least twice
+        frequent_list = [(q, count) for q, count in query_counts.items() if count >= 2]
 
-    not_answered = total - answered  # remaining ones were not answered
+        # 5. Apply the Admin's grouping logic (The magic that fixes the count)
+        # This merges "What are core values?" with "core values"
+        grouped_data = group_similar_queries(frequent_list, threshold=0.80)
 
-    # Count which questions appeared most often
-    query_counter = Counter(
-        (r.get("query_text") or "").strip().lower()
-        for r in reader if r.get("query_text")
-    )
-    top_faqs = query_counter.most_common(10)  # get top 10 repeated questions
+        # 6. Format strictly for the App (Hide the 'variations' list)
+        most_frequent = []
+        for group in grouped_data:
+            most_frequent.append({
+                "question": group['representative'].strip().capitalize(),
+                "count": group['total_count']
+            })
 
-    # Return everything in an easy-to-read format
-    return {
-        "total_queries": total,
-        "answered_queries": answered,
-        "not_answered_queries": not_answered,
-        "accuracy_rate": (answered / total * 100) if total > 0 else 0,
-        "most_frequent_questions": [
-            {"question": q, "count": c} for q, c in top_faqs
-        ]
-    }
+        # Return top 10 to keep the mobile UI clean
+        return {"most_frequent_questions": most_frequent[:10]}
+
+    except Exception as e:
+        print(f"❌ Error syncing FAQ report: {e}")
+        return {"most_frequent_questions": []}
 
 
 # This function runs the main chat pipeline and tracks it in LangSmith
