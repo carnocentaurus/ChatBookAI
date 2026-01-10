@@ -382,11 +382,10 @@ class ChatbotMemory:
             return []
 
 
-    # checks if the user’s question relates to any of the custom information stored by an admin
     def get_relevant_custom_info(self, query: str) -> str:
         """
-        Get relevant custom info with fuzzy matching support
-        Now handles typos and variations in queries
+        Get relevant custom info with improved fuzzy matching
+        Now handles natural questions better
         """
         try:
             relevant = []
@@ -394,6 +393,12 @@ class ChatbotMemory:
         
             # Normalize query for better matching
             normalized_query = normalize_query_text(clean_query)
+        
+            # Extract key content words (remove question words)
+            stop_words = {'what', 'is', 'are', 'the', 'a', 'an', 'how', 'when', 'where', 
+                      'who', 'why', 'can', 'do', 'does', 'did', 'will', 'of', 'this', 'that'}
+            query_words = [w for w in normalized_query.split() if w not in stop_words and len(w) > 2]
+            query_keywords = ' '.join(query_words)
         
             for info in self.custom_info.values():
                 clean_topic = sanitize_text(info['topic'].lower())
@@ -403,28 +408,28 @@ class ChatbotMemory:
                 if clean_topic in clean_query or clean_topic in normalized_query:
                     match_score = 100
             
-                # Method 2: Check if query contains any word from topic
-                elif any(word in clean_query for word in clean_topic.split() if len(word) > 3):
-                    match_score = 80
+                # Method 2: Check if ALL topic words appear in query (any order)
+                topic_words = [w for w in clean_topic.split() if len(w) > 2]
+                if topic_words:
+                    words_found = sum(1 for tw in topic_words if tw in query_keywords)
+                    if words_found == len(topic_words):  # All topic words found
+                        match_score = 95
+                    elif words_found >= len(topic_words) * 0.7:  # 70% of words found
+                        match_score = 85
             
                 # Method 3: Fuzzy matching on topic
-                else:
-                    # Check fuzzy similarity with entire topic
-                    topic_similarity = fuzz.partial_ratio(clean_topic, normalized_query)
+                if match_score < 85:
+                    # Check fuzzy similarity with keywords only
+                    topic_similarity = fuzz.partial_ratio(clean_topic, query_keywords)
                 
                     if topic_similarity >= 70:
                         match_score = topic_similarity
                     else:
                         # Check each word in the topic against query
-                        topic_words = [w for w in clean_topic.split() if len(w) > 3]
-                        query_words = [w for w in normalized_query.split() if len(w) > 3]
-                    
-                        for topic_word in topic_words: # Iterates through each significant word from the stored topic
-                            for query_word in query_words: # Compares each topic word against each significant word from the user’s query
-                                # Calculates how similar the two words are using fuzzy string matching (0–100)
+                        for topic_word in topic_words:
+                            for query_word in query_words:
                                 word_similarity = fuzz.ratio(topic_word, query_word)
-                                if word_similarity >= 80:  # High threshold for word matching
-                                    # Updates the match score using the highest similarity value found
+                                if word_similarity >= 80:
                                     match_score = max(match_score, word_similarity)
             
                 # If we have a good match, add it to results
@@ -436,7 +441,6 @@ class ChatbotMemory:
                     })
         
             # Sort by match score (highest first)
-            # lambda - a small, unnamed function used for quick, inline operations
             relevant.sort(key=lambda x: x['score'], reverse=True)
         
             # Return top 3 matches
@@ -1173,9 +1177,11 @@ async def chat(request: Request):
         if not docs:  # If no related handbook parts were found
             no_answer_msg = "I couldn't find relevant information in the handbook for your question."  # Default message
             memory.add_conversation(session_id, query, no_answer_msg)  # Save this in memory
+            ''''
             await asyncio.get_event_loop().run_in_executor(  # Log it for reference
                 executor, log_query, query, no_answer_msg, False, 0
             )
+            '''
             return {"answer": no_answer_msg}  # Send the no-answer message
         
         # Step 2: Build the context for the model
@@ -1274,25 +1280,46 @@ class ChatLog(BaseModel):
 # Add this route to handle the logging
 @app.post("/log_to_csv")
 async def log_to_csv_endpoint(log: ChatLog):
+    """
+    External logging endpoint - only for remote/web logs
+    Does NOT duplicate the main query log
+    """
     try:
-        # 1. Clean data using your existing sanitize_text
+        from datetime import datetime
+        
+        # Create a SEPARATE log file for external sources
+        EXTERNAL_LOG_FILE = "data/external_query_log.csv"
+        
         clean_query = sanitize_text(log.query)
         clean_answer = sanitize_text(log.answer)
         timestamp = datetime.now().isoformat()
 
-        # 2. Append to the master CSV safely
-        with open(LOG_FILE, 'a', newline='', encoding='utf-8') as f:
-            writer = csv.writer(f, quoting=csv.QUOTE_ALL) # This fixes the "double quote" error!
-            writer.writerow([timestamp, clean_query, clean_answer])
+        os.makedirs("data", exist_ok=True)
+        file_exists = os.path.isfile(EXTERNAL_LOG_FILE)
+        
+        with open(EXTERNAL_LOG_FILE, 'a', newline='', encoding='utf-8') as f:
+            fieldnames = ["timestamp", "query_text", "answer_text", "session_id", "source"]
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            
+            if not file_exists:
+                writer.writeheader()
+            
+            writer.writerow({
+                "timestamp": timestamp,
+                "query_text": clean_query,
+                "answer_text": clean_answer,
+                "session_id": log.session_id,
+                "source": "external"
+            })
 
-        # 3. Add to SQLite memory so it shows in your Admin Panel
-        memory.add_conversation(log.session_id, clean_query, clean_answer, "Web/Remote Log")
+        # Add to memory for admin panel viewing
+        memory.add_conversation(log.session_id, clean_query, clean_answer, "External Log")
 
         return {"status": "success"}
     except Exception as e:
-        print(f"❌ Server logging error: {e}")
+        print(f"❌ External logging error: {e}")
         return {"status": "error", "message": str(e)}, 500
-    
+
 
 @app.post("/feedback")
 async def submit_feedback(feedback: FeedbackSubmission):
