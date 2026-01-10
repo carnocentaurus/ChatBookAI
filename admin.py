@@ -280,44 +280,126 @@ def setup_admin_routes(app, memory, LOG_FILE, MEMORY_DB):
             raise HTTPException(status_code=500, detail=f"Error exporting query log: {str(e)}")
 
 
-    @app.get("/admin/custom-info", response_class=HTMLResponse)  # When admin visits this page, show all custom info
-    async def admin_custom_info(credentials: HTTPBasicCredentials = Depends(verify_admin)):  # Make sure admin is logged in
-        # Admin page for viewing and managing saved info
-        return HTMLResponse(content=get_custom_info_html(memory.custom_info))  # Show the page with all current info
+    @app.get("/admin/custom-info", response_class=HTMLResponse)
+    async def admin_custom_info(
+        credentials: HTTPBasicCredentials = Depends(verify_admin),
+        success: str = None
+    ):
+        """Admin page for viewing and managing saved info"""
+    
+        # Get the base HTML
+        base_html = get_custom_info_html(memory.custom_info)
+    
+        # Add alert script if there's a success message
+        if success:
+            from urllib.parse import unquote
+            message = unquote(success)
+            alert_script = f"""
+            <script>
+                alert('{message}');
+            </script>
+            """
+            # Inject the alert script before closing </body> tag
+            base_html = base_html.replace('</body>', f'{alert_script}</body>')
+    
+        return HTMLResponse(content=base_html)
     
 
-    @app.get("/admin/custom-info/add", response_class=HTMLResponse)  # Page for adding new custom info
+    @app.get("/admin/custom-info/add", response_class=HTMLResponse)
     async def admin_add_info_form(
-        credentials: HTTPBasicCredentials = Depends(verify_admin),  # Check admin login
-        prefill_topic: str = None # Optional topic to fill in automatically
+        credentials: HTTPBasicCredentials = Depends(verify_admin),
+        prefill_topic: str = None
     ):
-        # Show the form to add new info
-        prefilled_topic = unquote(prefill_topic) if prefill_topic else ""  # If there’s a topic, show it in the form
-        return HTMLResponse(content=get_add_custom_info_form_html(prefilled_topic))  # Display the form page
+        """Show the form to add new info"""
+        from urllib.parse import unquote
+        prefilled_topic = unquote(prefill_topic) if prefill_topic else ""
+        return HTMLResponse(content=get_add_custom_info_form_html(prefilled_topic))
     
 
-    @app.post("/admin/custom-info/add")  # When admin submits the form, this handles it
+    @app.post("/admin/custom-info/add")
     async def admin_add_info(
-        credentials: HTTPBasicCredentials = Depends(verify_admin),  # Check admin login
-        topic: str = Form(...), # Get topic text from the form
-        information: str = Form(...), # Get information text from the form
+        credentials: HTTPBasicCredentials = Depends(verify_admin),
+        topic: str = Form(...),
+        information: str = Form(...)
     ):
-        # Add the new custom info to memory
-        memory.add_custom_info(topic, information) # Save the topic and info
-        # 303 = redirect client
-        return RedirectResponse(url="/admin/custom-info", status_code=303)  # Go back to the list after adding
+        """Add custom info - overwrites if similar topic exists"""
     
-    
+        try:
+            from urllib.parse import quote
+            from fuzzywuzzy import fuzz
+            import re
+        
+            clean_topic = topic.strip()
+            clean_info = information.strip()
+        
+            # Find and remove similar existing entries (90% similarity)
+            keys_to_remove = []
+            for key, entry in memory.custom_info.items():
+                existing_topic = entry['topic'].strip().lower()
+                new_topic = clean_topic.lower()
+                similarity = fuzz.ratio(existing_topic, new_topic)
+            
+                if similarity >= 90:  # Similar enough - mark for removal
+                    keys_to_remove.append(key)
+        
+            # Remove old similar entries
+            for key in keys_to_remove:
+                del memory.custom_info[key]
+        
+            # Generate new unique key
+            slug = re.sub(r'[^a-z0-9]+', '_', clean_topic.lower()).strip('_')
+            base_slug = slug
+            counter = 1
+            while slug in memory.custom_info:
+                slug = f"{base_slug}_{counter}"
+                counter += 1
+        
+            # Add new entry
+            memory.custom_info[slug] = {
+                "topic": clean_topic,
+                "information": clean_info,
+                "added_at": datetime.now().isoformat()
+            }
+        
+            # Save to file
+            memory.save_custom_info()
+        
+            # Redirect with success message
+            message = quote(f"Custom info added: {clean_topic}")
+            return RedirectResponse(
+                url=f"/admin/custom-info?success={message}",
+                status_code=303
+            )
+        
+        except Exception as e:
+            print(f"Error adding custom info: {e}")
+            message = quote(f"Error: {str(e)}")
+            return RedirectResponse(
+                url=f"/admin/custom-info?success={message}",
+                status_code=303
+            )
+        
+
     @app.get("/admin/custom-info/delete/{info_id}")
     async def admin_delete_info(
         info_id: str,
         credentials: HTTPBasicCredentials = Depends(verify_admin)
     ):
-        # Delete a custom info entry if it exists
+        """Delete a custom info entry"""
+        from urllib.parse import quote
+    
         if info_id in memory.custom_info:
+            topic = memory.custom_info[info_id]['topic']
             del memory.custom_info[info_id]
             memory.save_custom_info()
-        return RedirectResponse(url="/admin/custom-info", status_code=303)
+            message = quote(f"Deleted: {topic}")
+        else:
+            message = quote("Entry not found")
+    
+        return RedirectResponse(
+            url=f"/admin/custom-info?success={message}",
+            status_code=303
+        )
     
 
     @app.get("/admin/export-custom-info")
