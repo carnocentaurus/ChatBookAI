@@ -13,7 +13,6 @@ import 'chat.dart';
 void main() { // The entry point of every Flutter app. Execution starts here.
   WidgetsFlutterBinding.ensureInitialized(); // Initializes Flutter engine bindings required for platform channel and native desktop method calls (like setWindowTitle).
 
-  // We check !kIsWeb first because Platform.isWindows crashes on web.
   if (!kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
     setWindowTitle('ChatBook AI'); // Only visible on desktop title bars.
     setWindowMinSize(const Size(500, 1000)); // Defines the smallest possible window size (width: 500px, height: 1000px).  
@@ -24,7 +23,6 @@ void main() { // The entry point of every Flutter app. Execution starts here.
   runApp(const SplashWrapper()); // Launches the root Flutter widget (`MyApp`) which builds the entire UI. 
 }
 
-
 const bool useProduction = false;  // true = Render, false = local
 
 String getBaseUrl() {
@@ -33,7 +31,6 @@ String getBaseUrl() {
   } 
   else {
     // Local testing
-    // Added a check for web first to avoid Platform crash
     if (kIsWeb) {
       return "http://localhost:8000"; 
     }
@@ -41,12 +38,11 @@ String getBaseUrl() {
       return "http://127.0.0.1:8000";
     } 
     else if (Platform.isAndroid || Platform.isIOS) {
-      return "http://10.21.215.213:8000";
+      return "http://10.144.180.213:8000";
     }
   }
   throw UnsupportedError("Unsupported platform");
 }
-
 
 Future<bool> isServerReady() async {
   try {
@@ -72,7 +68,7 @@ String _sessionId = DateTime.now().millisecondsSinceEpoch.toString();
 String getSessionId() => _sessionId;
 
 
-// This function sends your question to the chatbot backend, waits for a response, and returns the chatbot's answer
+// This function sends the question to the chatbot backend, waits for a response, and returns the chatbot's answer
 Future<String> queryHandbook(String question) async {
   final url = Uri.parse("${getBaseUrl()}/chat");
   final logUrl = Uri.parse("${getBaseUrl()}/log_to_csv");
@@ -90,7 +86,7 @@ Future<String> queryHandbook(String question) async {
       String answer = responseData["answer"] ?? "No response received";
 
       // 2. Log to server
-      // We removed .catchError and wrapped it in a separate try/catch 
+      // remove .catchError and wrapped it in a separate try/catch 
       // to keep it clean and avoid the type mismatch error.
       _sendAndForgetLog(logUrl, question, answer);
 
@@ -246,6 +242,7 @@ class _MyAppState extends State<MyApp> { // Holds data and behavior for MyApp
   @override
   Widget build(BuildContext context) { // Builds the main structure of the app
     return MaterialApp( // Main app container
+      debugShowCheckedModeBanner: false,
       title: 'ChatBook AI',
       theme: ThemeData( // App theme settings
         fontFamily: 'Poppins',

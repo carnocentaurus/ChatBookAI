@@ -20,7 +20,7 @@ from difflib import SequenceMatcher
 from dotenv import load_dotenv
 load_dotenv()
 
-# Security setup
+# admin.py (admin authorization)
 security = HTTPBasic()  # sets up basic login checking
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")  # gets the admin name or uses "admin" if none is set
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "gsu2025")  # gets the admin password or uses "gsu2025" if none is set

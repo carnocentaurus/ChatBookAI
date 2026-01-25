@@ -1,6 +1,5 @@
-# api.py
+# api.py (main backend file)
 
-# python modules
 import os                   # Used for file paths and environment variables
 import csv                  # For reading and writing CSV files
 import json                 # For handling JSON data
@@ -13,24 +12,19 @@ from concurrent.futures import ThreadPoolExecutor  # For running tasks in backgr
 from collections import Counter  # Helps count items (like top FAQ questions)
 from typing import List, Dict, Optional  # Type hints for better code readability
 from urllib.parse import quote  # Encodes URLs safely
-
 from dotenv import load_dotenv  # Used to load .env configuration files
 load_dotenv()  # Loads environment variables (API keys, paths, etc.) from .env file
 
-# fastapi
 from fastapi import FastAPI, Request  # FastAPI for backend API creation
 from fastapi.middleware.cors import CORSMiddleware  # Allows frontend (Flutter app) to access the backend
-from pydantic import BaseModel  # Used to define structured request/response data
 
-# gemini
+from pydantic import BaseModel  # Used to define structured request/response data
 import google.generativeai as genai  # Google Gemini API integration for LLM responses
 
-# langsmith
 from langsmith import traceable, Client  # Used for tracking AI performance and debugging
 from langsmith.run_helpers import get_current_run_tree  # Helps trace detailed run information
 client = Client()  # Creates a client to log or monitor model performance in LangSmith
 
-# langchain and chroma vector db
 from langchain_huggingface import HuggingFaceEmbeddings  # Converts text into embeddings (numerical form)
 from langchain_chroma import Chroma  # Local vector database (stores and retrieves documents)
 from langchain.docstore.document import Document  # Represents text documents in LangChain
@@ -38,7 +32,6 @@ from langchain.docstore.document import Document  # Represents text documents in
 from difflib import SequenceMatcher
 from fuzzywuzzy import fuzz
 
-# admin
 from admin import setup_admin_routes  # Imports routes for admin panel (feedback, reports, etc.)
 from admin import group_similar_queries
 
