@@ -15,9 +15,9 @@ void main() { // The entry point of every Flutter app. Execution starts here.
 
   if (!kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
     setWindowTitle('ChatBook AI'); // Only visible on desktop title bars.
-    setWindowMinSize(const Size(500, 1000)); // Defines the smallest possible window size (width: 500px, height: 1000px).  
-    setWindowMaxSize(const Size(500, 1000)); // Defines the largest possible window size (same as min size).
-    setWindowFrame(const Rect.fromLTWH(50, 50, 500, 1000)); // Positions the window at (50, 50) with a size of 500x1000 pixels upon opening.
+    //setWindowMinSize(const Size(500, 1000)); // Defines the smallest possible window size (width: 500px, height: 1000px).  
+    //setWindowMaxSize(const Size(500, 1000)); // Defines the largest possible window size (same as min size).
+    //setWindowFrame(const Rect.fromLTWH(50, 50, 500, 1000)); // Positions the window at (50, 50) with a size of 500x1000 pixels upon opening.
   }
 
   runApp(const SplashWrapper()); // Launches the root Flutter widget (`MyApp`) which builds the entire UI. 
@@ -38,7 +38,7 @@ String getBaseUrl() {
       return "http://127.0.0.1:8000";
     } 
     else if (Platform.isAndroid || Platform.isIOS) {
-      return "http://10.144.180.213:8000";
+      return "http://10.226.63.213:8000";
     }
   }
   throw UnsupportedError("Unsupported platform");

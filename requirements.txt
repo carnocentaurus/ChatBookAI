@@ -14,7 +14,8 @@ langsmith>=0.1.0
 # --- Embeddings & Transformers ---
 sentence-transformers==3.0.1
 transformers==4.44.2
-tokenizers
+huggingface-hub<1.0
+tokenizers==0.19.1
 
 # --- Vector database ---
 chromadb>=0.5.6,<0.6.0
